@@ -1,32 +1,18 @@
-# _Sample project_
+# ESP32 MQTT Node Firmware Prototype
 
-(See the README.md file in the upper level 'examples' directory for more information about examples.)
+This is just a prototype for an operating system I plan to write for the ESP32.
+I'm going to do a rewrite of everything when I'm comfordable with how this project functions, but I'll be leaving it in place so feel free to fork or take what you like!
 
-This is the simplest buildable example. The example is used by command `idf.py create-project`
-that copies the project to user specified path and set it's name. For more information follow the [docs page](https://docs.espressif.com/projects/esp-idf/en/latest/api-guides/build-system.html#start-a-new-project)
+The rewrite may be near identical on the first commit or completely different, so if you plan to make a project that's based on this please keep in mind you may have to do a complete re-write to stay up to date, or take over maintaining this yourself!
 
-
-
-## How to use example
-We encourage the users to use the example as a template for the new projects.
-A recommended way is to follow the instructions on a [docs page](https://docs.espressif.com/projects/esp-idf/en/latest/api-guides/build-system.html#start-a-new-project).
-
-## Example folder contents
-
-The project **sample_project** contains one source file in C language [main.c](main/main.c). The file is located in folder [main](main).
-
-ESP-IDF projects are built using CMake. The project build configuration is contained in `CMakeLists.txt`
-files that provide set of directives and instructions describing the project's source files and targets
-(executable, library, or both). 
-
-Below is short explanation of remaining files in the project folder.
-
-```
-├── CMakeLists.txt
-├── main
-│   ├── CMakeLists.txt
-│   └── main.c
-└── README.md                  This is the file you are currently reading
-```
-Additionally, the sample project contains Makefile and component.mk files, used for the legacy Make based build system. 
-They are not used or needed when building with CMake and idf.py.
+## Basic Functionality
+ - [x] Boot and host a WLAN to prompt user for WiFi details
+ - [ ] Prompt user for MQTT details and boot mode
+ - [ ] Allow user to store default settings in NVS for handsoff-init
+ - [ ] Establish custom desktop server connection and init presence
+ - [ ] Establish a command interface with the desktop mqtt server
+ - [ ] Pin exposure on a regularly polled basis
+ - [ ] Basic use case tasks and commands
+ - [ ] OnDemand and OnChange update modes
+ - [ ] Full GPIO exposure and customisation (Might migrate during this)
+ - [ ] Extended HAL API exposure (Probably migrate before this)
