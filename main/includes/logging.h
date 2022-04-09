@@ -1,0 +1,1 @@
+void Print(char* sender, char* message);
