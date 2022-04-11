@@ -16,3 +16,14 @@ The rewrite may be near identical on the first commit or completely different, s
  - [ ] OnDemand and OnChange update modes
  - [ ] Full GPIO exposure and customisation (Might migrate during this)
  - [ ] Extended HAL API exposure (Probably migrate before this)
+
+
+## HTML Subproject
+The webserver responces are stored like so `#define TAG "<html>[...]</html>"`, and thusly require a src->inline conversion that removes whitespace and escapes the `"` character. This would be tedius to do by hand so I've written a basic utility in C# to converts the web src.
+
+In order to run the utility just cd into the html folder, `dotnet run` and follow the prompts.
+
+Below are a few caveats:
+ - You will likely need to `sudo` to write into the ../main directory if you code in a dev container
+ - The parser doesn't strip extended spaces, only tabs - thusly src must be tab indented
+ - I haven't checked it on windows/macOS machines, but it should work since I used Path.Combine, YMMV
