@@ -5,7 +5,8 @@ public static class Configuration
         ("WIFI_DETAILS", "html/wifi.html"),
         ("MQTT_DETAILS", "html/mqtt.html"),
         ("BOOT_DETAILS", "html/mode.html"),
-        ("FORM_ERRPAGE", "html/ferr.html")
+        ("FORM_ERRPAGE", "html/ferr.html"),
+        ("PAGE_CSSFILE", "html/style.css")
     };
 
     public const string OUTPUT_FILE_NAME = "htmlsrc.h";
