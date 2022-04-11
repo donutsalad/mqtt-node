@@ -9,11 +9,11 @@
 //TODO: Watch for success and errors that aren't handled.
 static EventGroupHandle_t webserver_event_group;
 
-void wait_for_wifi_config(void)
+void wait_for_config_okay(void)
 {
     xEventGroupWaitBits(
         webserver_event_group,
-        SERVER_CONFIG_OK,
+        SERVER_CONFIG_OKAY,
         pdFALSE, pdFALSE,
         portMAX_DELAY
     );
@@ -33,19 +33,43 @@ void wait_for_shutdown_completion(void)
 {
     xEventGroupWaitBits(
         webserver_event_group,
-        SERVER_SHUTDOWN,
+        SERVER_STOP_FINISH,
         pdFALSE, pdFALSE,
         portMAX_DELAY
     );
 }
 
 const char* unknown_entity   = "UNKNOWN ENTITY";
-const char* wifi_config_page = WIFI_CONFIG_HTML_WIFI_DETAILS;
-const char* wifi_stylesheet  = WIFI_CONFIG_HTML_PAGE_CSSFILE;
+
+static const char* wifi_config_page = WIFI_CONFIG_HTML_WIFI_DETAILS;
+static const char* wifi_set_ok_page = WIFI_CONFIG_HTML_WIFI_CONFIRM;
+static const char* mqtt_config_page = WIFI_CONFIG_HTML_MQTT_DETAILS;
+static const char* mqtt_set_ok_page = WIFI_CONFIG_HTML_MQTT_CONFIRM;
+static const char* mode_config_page = WIFI_CONFIG_HTML_MODE_DETAILS;
+static const char* boot_notyet_page = WIFI_CONFIG_HTML_DENY_BOOTNOW;
+static const char* done_config_page = WIFI_CONFIG_HTML_DONE_CONFIRM;
+static const char* uerr_fnferr_page = WIFI_CONFIG_HTML_E400_ERRPAGE;
+static const char* uerr_ivferr_page = WIFI_CONFIG_HTML_E400_ERRPAGE;
+static const char* ierr_inserr_page = WIFI_CONFIG_HTML_E500_ERRPAGE;
+static const char* only_styles_file = WIFI_CONFIG_HTML_ONLY_CSSFILE;
 
 static esp_err_t webserver_get_entity(httpd_req_t *req, wifi_entity_t entity)
 {
     const char** resource = NULL;
+
+    EventBits_t bits = xEventGroupGetBits(webserver_event_group);
+    if(bits & SERVER_SHUTDOWN_OK) {
+        return ESP_FAIL;
+    }
+    else if(bits & SERVER_FCSS_SERVED) {
+        xEventGroupSetBits(webserver_event_group, SERVER_SHUTDOWN_OK);
+        return ESP_FAIL;
+    }
+    else if(bits & SERVER_FINAL_SERVE) {
+        if(entity != WIFI_ENTITY_PAGE_CSS) {
+            return ESP_FAIL;
+        }
+    }
 
     switch(entity)
     {
@@ -53,12 +77,49 @@ static esp_err_t webserver_get_entity(httpd_req_t *req, wifi_entity_t entity)
             resource = &wifi_config_page;
             break;
 
+        case WIFI_ENTITY_WIFI_DONE:
+            resource = &wifi_set_ok_page;
+            break;
+
+        case WIFI_ENTITY_MQTT_PAGE:
+            resource = &mqtt_config_page;
+            break;
+
+        case WIFI_ENTITY_MQTT_DONE:
+            resource = &mqtt_set_ok_page;
+            break;
+
+        case WIFI_ENTITY_DENY_BOOT:
+            resource = &boot_notyet_page;
+            break;
+
+        case WIFI_ENTITY_MODE_PAGE:
+            resource = &mode_config_page;
+            break;
+
+        case WIFI_ENTITY_DONE_PAGE:
+            resource = &done_config_page;
+            break;
+
+        case WIFI_ENTITY_E400_PAGE:
+            resource = &uerr_ivferr_page;
+            break;
+
+        case WIFI_ENTITY_E404_PAGE:
+            resource = &uerr_fnferr_page;
+            break;
+
+        case WIFI_ENTITY_E500_PAGE:
+            resource = &ierr_inserr_page;
+            break;
+
         case WIFI_ENTITY_PAGE_CSS:
-            resource = &wifi_stylesheet;
+            resource = &only_styles_file;
             break;
 
         default:
             resource = &unknown_entity;
+            break;
     }
 
 
@@ -120,16 +181,92 @@ static esp_err_t webserver_get_entity(httpd_req_t *req, wifi_entity_t entity)
     }
 }
 
-static esp_err_t webserver_get_root(httpd_req_t *req)
+static esp_err_t webserver_get_wifi(httpd_req_t *req)
 {
     Print("Webserver", "Request for config page received, serving...");
+    EventBits_t bits = xEventGroupGetBits(webserver_event_group);
+    if(bits & SERVER_WIFI_CONFIG)
+    {
+        Print("Webserver", "Wifi config already set, serving...");
+        return webserver_get_entity(req, WIFI_ENTITY_WIFI_DONE);
+    }
     return webserver_get_entity(req, WIFI_ENTITY_WIFI_PAGE);
+}
+
+static esp_err_t webserver_get_mqtt(httpd_req_t *req)
+{
+    Print("Webserver", "Request for config page received, serving...");
+    EventBits_t bits = xEventGroupGetBits(webserver_event_group);
+    if(bits & SERVER_MQTT_CONFIG)
+    {
+        Print("Webserver", "MQTT config already set, serving...");
+        return webserver_get_entity(req, WIFI_ENTITY_MQTT_DONE);
+    }
+    return webserver_get_entity(req, WIFI_ENTITY_MQTT_PAGE);
+}
+
+static esp_err_t webserver_get_boot(httpd_req_t *req)
+{
+    Print("Webserver", "Request for config page received, routing...");
+    EventBits_t bits = xEventGroupGetBits(webserver_event_group);
+    if(bits & SERVER_BOOT_CONFIG)
+    {
+        Print("Webserver", "Everything is set! Igonring request in the interum, server should be shutdown soon.");
+        return ESP_FAIL;
+    }
+
+    if(bits & SERVER_WIFI_CONFIG)
+    {
+        if(bits & SERVER_MQTT_CONFIG)
+        {
+            return webserver_get_entity(req, WIFI_ENTITY_MODE_PAGE);
+        }
+        Print("Webserver", "MQTT config not yet set! Serving ping root page...");
+        return webserver_get_entity(req, WIFI_ENTITY_DENY_BOOT);
+    }
+
+    Print("Webserver", "WiFi config are not yet set! Serving ping root page...");
+    return webserver_get_entity(req, WIFI_ENTITY_DENY_BOOT);
 }
 
 static esp_err_t webserver_get_style(httpd_req_t *req)
 {
     Print("Webserver", "Request for stylesheet received, serving...");
+    EventBits_t bits = xEventGroupGetBits(webserver_event_group);
+    //Gauranteed serve of CSS before shutdown (bar timeout)
+    if(bits & SERVER_FINAL_SERVE) {
+        esp_err_t result = webserver_get_entity(req, WIFI_ENTITY_PAGE_CSS);
+        xEventGroupSetBits(webserver_event_group, SERVER_FCSS_SERVED | SERVER_SHUTDOWN_OK);
+        return result;
+    }
     return webserver_get_entity(req, WIFI_ENTITY_PAGE_CSS);
+}
+
+static esp_err_t webserver_get_root(httpd_req_t *req)
+{
+    Print("Webserver", "Routing root request...");
+
+    EventBits_t bits = xEventGroupGetBits(webserver_event_group);
+    if(bits & SERVER_WIFI_CONFIG)
+    {
+        if(bits & SERVER_MQTT_CONFIG)
+        {
+            if(bits & SERVER_BOOT_CONFIG)
+            {
+                Print("Webserver", "Everything is set! Igonring request in the interum, server should be shutdown soon.");
+                return ESP_OK;
+            }
+
+            Print("Webserver", "Mode is not set! Serving mode config page...");
+            return webserver_get_boot(req);
+        }
+
+        Print("Webserver", "MQTT config is not set! Serving mqtt config page...");
+        return webserver_get_mqtt(req);
+    }
+
+    Print("Webserver", "No settings set, sending wifi config page...");
+    return webserver_get_wifi(req);
 }
 
 //ASCII hex to raw hex nibble downconversion
@@ -179,6 +316,7 @@ static inline void walkalong_conversion(char buffer[], int length)
 }
 
 //TODO: Standardise the a & b params.
+//TODO: NULL EXCEPTION HANDLING
 //Expected format:
 //a=<ssid>&b=<pass> in URL encoding
 static int parse_post_parameters(char raw[], int length, char ssid[], int ssidMaxLen, char pass[], int passMaxLen)
@@ -212,17 +350,17 @@ static int parse_post_parameters(char raw[], int length, char ssid[], int ssidMa
 
     if (ssidLen == 0 || passLen == 0)
     {
-        return WIFI_CONFIG_BADFORMAT;
+        return SERVER_CONFIG_BADFORMAT;
     }
 
     walkalong_conversion(ssid, ssidLen);
     walkalong_conversion(pass, passLen);
 
-    return WIFI_CONFIG_OK;
+    return SERVER_CONFIG_OK;
 }
 
 static const int SSIDLength = WIFI_SSID_BUFFER_MAX; static const int PASSLength = WIFI_PASS_BUFFER_MAX;
-static int config_set_handler(char data[], int length)
+static int config_wifi_set_handler(char data[], int length)
 {
     char ssid[SSIDLength];
     char pass[PASSLength];
@@ -233,17 +371,17 @@ static int config_set_handler(char data[], int length)
 
     switch(parse_post_parameters(data, length, ssid, SSIDLength, pass, PASSLength))
     {
-        case WIFI_CONFIG_OK:
+        case SERVER_CONFIG_OK:
             Print("Webserver", "POST data parsed successfully!");
             break;
 
-        case WIFI_CONFIG_BADFORMAT:
+        case SERVER_CONFIG_BADFORMAT:
             Print("Webserver", "Bad format for POST data! Aborting set...");
-            return WIFI_CONFIG_BADFORMAT;
+            return SERVER_CONFIG_BADFORMAT;
 
         default:
             Print("Webserver", "Unhandled error while parsing POST data! Aborting set...");
-            return WIFI_CONFIG_UNSAVABLE;
+            return SERVER_CONFIG_UNSAVABLE;
     }
 
     Print("Webserver", "Setting new wifi config...");
@@ -257,36 +395,211 @@ static int config_set_handler(char data[], int length)
         case WIFI_DETAILS_TOBIG:
             Print("Webserver", "New wifi config buffers are too big! Aborting set...");
             Print("Webserver", "Please check the buffers in the src and open an issue on github if there is a mismatch!");
-            return WIFI_CONFIG_UNSAVABLE;
+            return SERVER_CONFIG_UNSAVABLE;
 
         default:
             Print("Webserver", "Unhandled error while setting new wifi config! Aborting set...");
-            return WIFI_CONFIG_UNSAVABLE;
+            return SERVER_CONFIG_UNSAVABLE;
     }
 
     Print("Webserver", "Setting server config saved flag.");
 
     xEventGroupSetBits(
         webserver_event_group, 
-        SERVER_CONFIG_OK
+        SERVER_WIFI_CONFIG
     );
 
-    return WIFI_CONFIG_OK;
+    return SERVER_CONFIG_OK;
 }
 
-static esp_err_t webserver_set_config(httpd_req_t *req)
+static const int ENDPOINTLength = MQTT_ENDPOINT_BUFFER; static const int USERNAMELength = MQTT_USERNAME_BUFFER;
+static int config_mqtt_set_handler(char data[], int length)
 {
+    char endpoint[ENDPOINTLength];
+    char username[USERNAMELength];
+
+    //Now Redundant.
+    //memset(ssid, '\0', sizeof(ssid));
+    //memset(pass, '\0', sizeof(pass));
+
+    switch(parse_post_parameters(data, length, endpoint, ENDPOINTLength, username, USERNAMELength))
+    {
+        case SERVER_CONFIG_OK:
+            Print("Webserver", "POST data parsed successfully!");
+            break;
+
+        case SERVER_CONFIG_BADFORMAT:
+            Print("Webserver", "Bad format for POST data! Aborting set...");
+            return SERVER_CONFIG_BADFORMAT;
+
+        default:
+            Print("Webserver", "Unhandled error while parsing POST data! Aborting set...");
+            return SERVER_CONFIG_UNSAVABLE;
+    }
+
+    Print("Webserver", "Setting new mqtt config...");
+    
+    //Not Yet Implemented
+    /*
+    switch(set_wifi_details(ssid, SSIDLength, pass, PASSLength))
+    {
+        case WIFI_DETAILS_OK:
+            Print("Webserver", "New mqtt config set successfully!");
+            break;
+
+        case WIFI_DETAILS_TOBIG:
+            Print("Webserver", "New mqtt config buffers are too big! Aborting set...");
+            Print("Webserver", "Please check the buffers in the src and open an issue on github if there is a mismatch!");
+            return SERVER_CONFIG_UNSAVABLE;
+
+        default:
+            Print("Webserver", "Unhandled error while setting new mqtt config! Aborting set...");
+            return SERVER_CONFIG_UNSAVABLE;
+    }
+    */
+
+    Print("Webserver", "Setting mqtt config saved flag.");
+
+    xEventGroupSetBits(
+        webserver_event_group, 
+        SERVER_MQTT_CONFIG
+    );
+
+    return SERVER_CONFIG_OK;
+}
+
+static const int BOOTMODELength = BOOT_MODE_BUFFER; static const int BOOTDELAYLength = BOOT_DELAY_BUFFER;
+static int config_boot_set_handler(char data[], int length)
+{
+    char bootmode[BOOTMODELength];
+    char bootdelay[BOOTDELAYLength];
+
+    //Now Redundant.
+    //memset(ssid, '\0', sizeof(ssid));
+    //memset(pass, '\0', sizeof(pass));
+
+    switch(parse_post_parameters(data, length, bootmode, ENDPOINTLength, bootdelay, USERNAMELength))
+    {
+        case SERVER_CONFIG_OK:
+            Print("Webserver", "POST data parsed successfully!");
+            break;
+
+        case SERVER_CONFIG_BADFORMAT:
+            Print("Webserver", "Bad format for POST data! Aborting set...");
+            return SERVER_CONFIG_BADFORMAT;
+
+        default:
+            Print("Webserver", "Unhandled error while parsing POST data! Aborting set...");
+            return SERVER_CONFIG_UNSAVABLE;
+    }
+
+    Print("Webserver", "Setting new boot config...");
+    
+    //Not Yet Implemented
+    /*
+    switch(set_wifi_details(ssid, SSIDLength, pass, PASSLength))
+    {
+        case WIFI_DETAILS_OK:
+            Print("Webserver", "New boot config set successfully!");
+            break;
+
+        case WIFI_DETAILS_TOBIG:
+            Print("Webserver", "New boot config buffers are too big! Aborting set...");
+            Print("Webserver", "Please check the buffers in the src and open an issue on github if there is a mismatch!");
+            return SERVER_CONFIG_UNSAVABLE;
+
+        default:
+            Print("Webserver", "Unhandled error while setting new boot config! Aborting set...");
+            return SERVER_CONFIG_UNSAVABLE;
+    }
+    */
+
+    Print("Webserver", "Setting boot config saved flag.");
+
+    xEventGroupSetBits(
+        webserver_event_group, 
+        SERVER_BOOT_CONFIG | SERVER_CONFIG_OKAY
+    );
+
+    return SERVER_CONFIG_OK;
+}
+
+static const char* get_wifi_set_page() { return wifi_set_ok_page; }
+static const char* get_mqtt_set_page() { return mqtt_set_ok_page; }
+
+//TODO: RENDER ERROR HANDLING
+//Is calloc a better option here?
+//We could free immediately after served. 
+//const char* boot_buffer = boot_set_ok_page();
+static char rendered_boot_page[1024];
+static const char* get_boot_page()
+{
+    wifi_connection_details_t* details = wifi_details();
+    int format = snprintf(rendered_boot_page, sizeof(rendered_boot_page), WIFI_CONFIG_HTML_DONE_CONFIRM, details->ssid, details->pass, "Unchecked", "Unchecked", "Unchecked", "Unchecked");   
+    if(format < 0)
+    {
+        Print("Webserver", "Error while rendering boot confirmation page!");
+        return "ENCODING ERROR";
+    }
+    else if(format >= sizeof(rendered_boot_page))
+    {
+        Print("Webserver", "Boot confirmation page is too big!");
+        return "BUFFER OVERFLOW ERROR";
+    }
+
+    xEventGroupSetBits(
+        webserver_event_group, 
+        SERVER_FINAL_SERVE
+    );
+
+    Print("Webserver", "Boot confirmation page rendered successfully!");
+    return (const char*) rendered_boot_page;
+}
+
+static esp_err_t webserver_set_entity(httpd_req_t *req, wifi_set_code_t set, char* tempDebugMessage)
+{
+    Print("Webserver", "The following message is the only dynamic message in the following function. Please note the source.");
+    Print("Webserver", tempDebugMessage);
+
+    EventBits_t bits = xEventGroupGetBits(webserver_event_group);
+    if(bits & (SERVER_SHUTDOWN_OK | SERVER_FINAL_SERVE)) return ESP_FAIL;
+
     char buffer[250];
     if(req->content_len < 1) return ESP_FAIL;
     else if(req->content_len > 250) return ESP_FAIL;
 
     int length = httpd_req_recv(req, buffer, req->content_len);
     if(length <= 0) return ESP_FAIL;
-    switch(config_set_handler(buffer, req->content_len))
+
+    int (*set_handler)(char[], int) = NULL;
+    const char* (*ok_responce)(void) = NULL;
+
+    switch(set)
     {
-        case WIFI_CONFIG_OK:
+        case WIFI_SET_CODE_WIFI:
+            set_handler = &config_wifi_set_handler;
+            ok_responce = &get_wifi_set_page;
+            break;
+
+        case WIFI_SET_CODE_MQTT:
+            set_handler = &config_mqtt_set_handler;
+            ok_responce = &get_mqtt_set_page;
+            break;
+
+        case WIFI_SET_CODE_MODE:
+            set_handler = &config_boot_set_handler;
+            ok_responce = &get_boot_page;
+            break;
+
+        default:
+            return ESP_FAIL;
+    }
+
+    switch((*set_handler)(buffer, req->content_len))
+    {
+        case SERVER_CONFIG_OK:
             Print("Webserver", "Config event was successful!");
-            switch(httpd_resp_send(req, WIFI_CONFIG_SET, HTTPD_RESP_USE_STRLEN))
+            switch(httpd_resp_send(req, (*ok_responce)(), HTTPD_RESP_USE_STRLEN))
             {
                 case ESP_ERR_HTTPD_INVALID_REQ:
                 case HTTPD_SOCK_ERR_TIMEOUT:
@@ -302,7 +615,7 @@ static esp_err_t webserver_set_config(httpd_req_t *req)
             }
             break;
         
-        case WIFI_CONFIG_BADFORMAT:
+        case SERVER_CONFIG_BADFORMAT:
             Print("Webserver", "Bad format for POST data! Aborting set...");
             //TODO: Bad format page (?)
             switch(httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad format for POST data!"))
@@ -320,8 +633,8 @@ static esp_err_t webserver_set_config(httpd_req_t *req)
             }
             return ESP_FAIL;
 
-        case WIFI_CONFIG_UNSAVABLE:
-            Print("Webserver", "Internal server error during /set handling! Aborting...");
+        case SERVER_CONFIG_UNSAVABLE:
+            Print("Webserver", "Internal server error during config set handling! Aborting...");
             switch(httpd_resp_send_500(req))
             {
                 case ESP_ERR_INVALID_ARG:
@@ -339,13 +652,73 @@ static esp_err_t webserver_set_config(httpd_req_t *req)
     }
 
     Print("Webserver", "Set config event was successful! Setting finished bit.");
-
-    xEventGroupSetBits(
-        webserver_event_group, 
-        SERVER_SET_CONFIG_DONE
-    );
-
     return ESP_OK;
+}
+
+static esp_err_t webserver_set_wifi(httpd_req_t *req)
+{
+    Print("Webserver", "POST Request for WiFi config recieved...");
+    EventBits_t bits = xEventGroupGetBits(webserver_event_group);
+    if(bits & SERVER_WIFI_CONFIG)
+    {
+        Print("Webserver", "Wifi config already set! Servering already done page...");
+        return webserver_get_entity(req, WIFI_ENTITY_WIFI_DONE);
+    }
+    return webserver_set_entity(req, WIFI_SET_CODE_WIFI, "This URI is: SET WIFI");
+}
+
+static esp_err_t webserver_set_mqtt(httpd_req_t *req)
+{
+    Print("Webserver", "POST Request for MQTT config recieved...");
+    EventBits_t bits = xEventGroupGetBits(webserver_event_group);
+    if(bits & SERVER_MQTT_CONFIG)
+    {
+        Print("Webserver", "MQTT config already set! Servering already done page...");
+        return webserver_get_entity(req, WIFI_ENTITY_MQTT_DONE);
+    }
+    return webserver_set_entity(req, WIFI_SET_CODE_MQTT, "This URI is: SET MQTT");
+}
+
+static esp_err_t webserver_set_boot(httpd_req_t *req)
+{
+    Print("Webserver", "POST Request for BOOT config recieved...");
+    EventBits_t bits = xEventGroupGetBits(webserver_event_group);
+    if(bits & (SERVER_WIFI_CONFIG | SERVER_MQTT_CONFIG))
+    {
+        return webserver_set_entity(req, WIFI_SET_CODE_MODE, "This URI is: SET BOOT");
+    }
+
+    Print("Webserver", "Other configs are not yet set! Serving ping root page...");
+    return webserver_get_entity(req, WIFI_ENTITY_DENY_BOOT);
+}
+
+static int attempt_register_uri_handler(httpd_handle_t server, const httpd_uri_t *uri, char* tempDebugMessage)
+{
+    Print("Webserver", "The following message is the only dynamic message in the following function. Please note the source.");
+    Print("Webserver", tempDebugMessage);
+    switch(httpd_register_uri_handler(server, uri))
+    {
+        case ESP_OK:
+            return 0;
+        
+        case ESP_ERR_INVALID_ARG:
+            Print("Webserver", "Invalid argument whilst registering afforementioned uri handle? Unsure whow we got this error... Aborting...");
+            return 1;
+            //Eventually attempt to handle this since we're all the way to setting up a webserver
+
+        case ESP_ERR_HTTPD_HANDLER_EXISTS:
+            Print("Webserver", "Uri handler already exists! Aborting...");
+            return 1;
+            //TODO: Deregister whatever handler is there and register this one in its place
+
+        case ESP_ERR_HTTPD_HANDLERS_FULL:
+            Print("Webserver", "Too many handlers registered! Aborting...");
+            return 1;
+
+        default:
+            Print("Webserver", "Unhandled error while registering afforementioned uri handle! Aborting...");
+            return 1;
+    }
 }
 
 static const httpd_uri_t root_uri = {
@@ -355,17 +728,52 @@ static const httpd_uri_t root_uri = {
     .user_ctx  = NULL
 };
 
-static const httpd_uri_t config_uri = {
-    .uri       = "/set",
-    .method    = HTTP_POST,
-    .handler   = webserver_set_config,
-    .user_ctx  = NULL
-};
-
 static const httpd_uri_t style_uri = {
     .uri       = "/style.css",
     .method    = HTTP_GET,
     .handler   = webserver_get_style,
+    .user_ctx  = NULL
+};
+
+static const httpd_uri_t wifi_get_uri = {
+    .uri       = "/wifi",
+    .method    = HTTP_GET,
+    .handler   = webserver_get_wifi,
+    .user_ctx  = NULL
+};
+
+static const httpd_uri_t mqtt_get_uri = {
+    .uri       = "/mqtt",
+    .method    = HTTP_GET,
+    .handler   = webserver_get_mqtt,
+    .user_ctx  = NULL
+};
+
+static const httpd_uri_t boot_get_uri = {
+    .uri       = "/boot",
+    .method    = HTTP_GET,
+    .handler   = webserver_get_boot,
+    .user_ctx  = NULL
+};
+
+static const httpd_uri_t wifi_set_uri = {
+    .uri       = "/wifi",
+    .method    = HTTP_POST,
+    .handler   = webserver_set_wifi,
+    .user_ctx  = NULL
+};
+
+static const httpd_uri_t mqtt_set_uri = {
+    .uri       = "/mqtt",
+    .method    = HTTP_POST,
+    .handler   = webserver_set_mqtt,
+    .user_ctx  = NULL
+};
+
+static const httpd_uri_t boot_set_uri = {
+    .uri       = "/boot",
+    .method    = HTTP_POST,
+    .handler   = webserver_set_boot,
     .user_ctx  = NULL
 };
 
@@ -403,77 +811,16 @@ static httpd_handle_t create_webserver(void)
             return NULL;
     }
 
-    switch(httpd_register_uri_handler(server, &root_uri))
-    {
-        case ESP_OK:
-            break;
-        
-        case ESP_ERR_INVALID_ARG:
-            Print("Webserver", "Invalid argument whilst registering root uri handle? Unsure whow we got this error... Aborting...");
-            return NULL;
-            //Eventually attempt to handle this since we're all the way to setting up a webserver
+    if(attempt_register_uri_handler(server, &root_uri, "This URI is: ROOT")) return NULL;
+    if(attempt_register_uri_handler(server, &style_uri, "This URI is: STYLE")) return NULL;
 
-        case ESP_ERR_HTTPD_HANDLER_EXISTS:
-            Print("Webserver", "Uri handler already exists! Aborting...");
-            return NULL;
-            //TODO: Deregister whatever handler is there and register this one in its place
+    if(attempt_register_uri_handler(server, &wifi_get_uri, "This URI is: WIFI")) return NULL;
+    if(attempt_register_uri_handler(server, &mqtt_get_uri, "This URI is: WIFI")) return NULL;
+    if(attempt_register_uri_handler(server, &boot_get_uri, "This URI is: WIFI")) return NULL;
 
-        case ESP_ERR_HTTPD_HANDLERS_FULL:
-            Print("Webserver", "Too many handlers registered! Aborting...");
-            return NULL;
-
-        default:
-            Print("Webserver", "Unhandled error while registering root uri handle! Aborting...");
-            return NULL;
-    }
-
-    switch(httpd_register_uri_handler(server, &style_uri))
-    {
-        case ESP_OK:
-            break;
-        
-        case ESP_ERR_INVALID_ARG:
-            Print("Webserver", "Invalid argument whilst registering stylesheet uri handle? Unsure whow we got this error... Aborting...");
-            return NULL;
-            //Eventually attempt to handle this since we're all the way to setting up a webserver
-
-        case ESP_ERR_HTTPD_HANDLER_EXISTS:
-            Print("Webserver", "Uri handler already exists! Aborting...");
-            return NULL;
-            //TODO: Deregister whatever handler is there and register this one in its place
-
-        case ESP_ERR_HTTPD_HANDLERS_FULL:
-            Print("Webserver", "Too many handlers registered! Aborting...");
-            return NULL;
-
-        default:
-            Print("Webserver", "Unhandled error while registering stylesheet uri handle! Aborting...");
-            return NULL;
-    }
-
-    switch(httpd_register_uri_handler(server, &config_uri))
-    {
-        case ESP_OK:
-            break;
-        
-        case ESP_ERR_INVALID_ARG:
-            Print("Webserver", "Invalid argument whilst registering config uri handle? Unsure whow we got this error... Aborting...");
-            return NULL;
-            //Eventually attempt to handle this since we're all the way to setting up a webserver
-
-        case ESP_ERR_HTTPD_HANDLER_EXISTS:
-            Print("Webserver", "Uri handler already exists! Aborting...");
-            return NULL;
-            //TODO: Deregister whatever handler is there and register this one in its place
-
-        case ESP_ERR_HTTPD_HANDLERS_FULL:
-            Print("Webserver", "Too many handlers registered! Aborting...");
-            return NULL;
-
-        default:
-            Print("Webserver", "Unhandled error while registering root config handle! Aborting...");
-            return NULL;
-    }
+    if(attempt_register_uri_handler(server, &wifi_set_uri, "This URI is: WIFI")) return NULL;
+    if(attempt_register_uri_handler(server, &mqtt_set_uri, "This URI is: WIFI")) return NULL;
+    if(attempt_register_uri_handler(server, &boot_set_uri, "This URI is: WIFI")) return NULL;
 
     return server;
 }
@@ -531,6 +878,30 @@ int InitialiseWebserver(void)
     return SERVER_OK;
 }
 
+static int attempt_deregister_uri(httpd_handle_t server, const char* uri, char* tempDebugMessage)
+{
+    Print("Webserver", "The following message is the only dynamic message in the following function. Please note the source.");
+    Print("Webserver", tempDebugMessage);
+    switch(httpd_unregister_uri(server, uri))
+    {
+        case ESP_OK:
+            return SERVER_OK;
+
+        case ESP_ERR_INVALID_ARG:
+            Print("Webserver", "Invalid argument whilst unregistering afforementioned uri handle? Unsure whow we got this error, but it's not important. Continuing...");
+            return SERVER_IGNORE;
+
+        case ESP_ERR_NOT_FOUND:
+            Print("Webserver", "Uri handler not found! No matter, destroying webserver anyway. Continuing...");
+            return SERVER_IGNORE;
+
+        default:
+            Print("Webserver", "Unhandled error while unregistering afforementioned uri handle! Aborting...");
+            Print("Webserver", "If error persists, consider breaking on the following LoC due to it being non-critical - however please submit an issue on the repository.");
+            return SERVER_FATAL;
+    }
+}
+
 int TriggerWebserverClose(void)
 {
     Print("Webserver", "Webserver destruction triggered...");
@@ -544,79 +915,37 @@ int TriggerWebserverClose(void)
     Print("Webserver", "Waiting until configuration set handler is completed...");
     xEventGroupWaitBits(
         webserver_event_group, 
-        SERVER_SET_CONFIG_DONE, 
+        SERVER_SHUTDOWN_OK, 
         pdFALSE, pdFALSE, 
-        portMAX_DELAY
+        pdMS_TO_TICKS(5000)
     );
 
     //My reason for this is to stop any new config set requests from being made whilst shutting down
     //I'm not sure if it's really necessary, but it's a good idea to be safe until I find out for sure.
-    //Honestly you could probably block on SERVER_SET_CONFIG_DONE but I realised that later on, so LOL
+    //Honestly you could probably block on SERVER_SHUTDOWN_OK but I realised that later on, so LOL
 
     int resultant = SERVER_OK;
 
-    switch(httpd_unregister_uri(webserver, "/"))
-    {
-        case ESP_OK:
-            break;
+    int resultbuf;
+    resultbuf = attempt_deregister_uri(webserver, "/", "This URI is: ROOT");
+    if(resultbuf == SERVER_FATAL) return SERVER_FATAL;
+    else if(resultbuf == SERVER_IGNORE) resultant = SERVER_IGNORE;
 
-        case ESP_ERR_INVALID_ARG:
-            Print("Webserver", "Invalid argument whilst unregistering root uri handle? Unsure whow we got this error, but it's not important. Continuing...");
-            resultant = SERVER_IGNORE;
-            break;
+    resultbuf = attempt_deregister_uri(webserver, "/wifi", "This URI is: WIFI");
+    if(resultbuf == SERVER_FATAL) return SERVER_FATAL;
+    else if(resultbuf == SERVER_IGNORE) resultant = SERVER_IGNORE;
 
-        case ESP_ERR_NOT_FOUND:
-            Print("Webserver", "Uri handler not found! No matter, destroying webserver anyway. Continuing...");
-            resultant = SERVER_IGNORE;
-            break;
+    resultbuf = attempt_deregister_uri(webserver, "/mqtt", "This URI is: MQTT");
+    if(resultbuf == SERVER_FATAL) return SERVER_FATAL;
+    else if(resultbuf == SERVER_IGNORE) resultant = SERVER_IGNORE;
 
-        default:
-            Print("Webserver", "Unhandled error while unregistering root uri handle! Aborting...");
-            Print("Webserver", "If error persists, consider breaking on the following LoC due to it being non-critical - however please submit an issue on the repository.");
-            return SERVER_FATAL;
-    }
+    resultbuf = attempt_deregister_uri(webserver, "/boot", "This URI is: BOOT");
+    if(resultbuf == SERVER_FATAL) return SERVER_FATAL;
+    else if(resultbuf == SERVER_IGNORE) resultant = SERVER_IGNORE;
 
-    switch(httpd_unregister_uri(webserver, "/style.css"))
-    {
-        case ESP_OK:
-            break;
-
-        case ESP_ERR_INVALID_ARG:
-            Print("Webserver", "Invalid argument whilst unregistering stylesheet uri handle? Unsure whow we got this error, but it's not important. Continuing...");
-            resultant = SERVER_IGNORE;
-            break;
-
-        case ESP_ERR_NOT_FOUND:
-            Print("Webserver", "Uri handler not found! No matter, destroying webserver anyway. Continuing...");
-            resultant = SERVER_IGNORE;
-            break;
-
-        default:
-            Print("Webserver", "Unhandled error while unregistering stylesheet uri handle! Aborting...");
-            Print("Webserver", "If error persists, consider breaking on the following LoC due to it being non-critical - however please submit an issue on the repository.");
-            return SERVER_FATAL;
-    }
-
-    switch(httpd_unregister_uri(webserver, "/set"))
-    {
-        case ESP_OK:
-            break;
-
-        case ESP_ERR_INVALID_ARG:
-            Print("Webserver", "Invalid argument whilst unregistering config uri handle? Unsure whow we got this error, but it's not important. Continuing...");
-            resultant = SERVER_IGNORE;
-            break;
-
-        case ESP_ERR_NOT_FOUND:
-            Print("Webserver", "Uri handler not found! No matter, destroying webserver anyway. Continuing...");
-            resultant = SERVER_IGNORE;
-            break;
-
-        default:
-            Print("Webserver", "Unhandled error while unregistering config uri handle! Aborting...");
-            Print("Webserver", "If error persists, consider breaking on the following LoC due to it being non-critical - however please submit an issue on the repository.");
-            return SERVER_FATAL;
-    }
+    resultbuf = attempt_deregister_uri(webserver, "/style.css", "This URI is: STYLE");
+    if(resultbuf == SERVER_FATAL) return SERVER_FATAL;
+    else if(resultbuf == SERVER_IGNORE) resultant = SERVER_IGNORE;
 
     switch(destroy_webserver(&webserver))
     {
@@ -636,7 +965,7 @@ int TriggerWebserverClose(void)
 
     xEventGroupSetBits(
         webserver_event_group, 
-        SERVER_SHUTDOWN
+        SERVER_STOP_FINISH
     );
 
     Print("Webserver", "Webserver shutdown complete.");

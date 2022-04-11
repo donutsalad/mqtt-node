@@ -15,7 +15,11 @@
         "stdio.h": "c",
         "ap_config.h": "c",
         "esp_wifi.h": "c",
-        "memory_resource": "c"
+        "memory_resource": "c",
+        "array": "c",
+        "string": "c",
+        "string_view": "c",
+        "*.ipp": "c"
     },
     "idf.flashType": "UART"
 }

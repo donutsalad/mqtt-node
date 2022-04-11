@@ -280,7 +280,7 @@ int InitialiseAccessPoint(void)
     }
 
     SetupWebserverEventListeners();
-    wait_for_wifi_config();
+    wait_for_config_okay();
     switch(TriggerWebserverClose())
     {
         case SERVER_OK:
