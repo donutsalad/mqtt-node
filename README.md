@@ -7,7 +7,7 @@ The rewrite may be near identical on the first commit or completely different, s
 
 ## Basic Functionality
  - [x] Boot and host a WLAN to prompt user for WiFi details
- - [ ] Prompt user for MQTT details and boot mode
+ - [x] Prompt user for MQTT details and boot mode
  - [ ] Allow user to store default settings in NVS for handsoff-init
  - [ ] Establish custom desktop server connection and init presence
  - [ ] Establish a command interface with the desktop mqtt server
