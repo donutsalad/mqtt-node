@@ -14,7 +14,8 @@
     "files.associations": {
         "stdio.h": "c",
         "ap_config.h": "c",
-        "esp_wifi.h": "c"
+        "esp_wifi.h": "c",
+        "memory_resource": "c"
     },
     "idf.flashType": "UART"
 }

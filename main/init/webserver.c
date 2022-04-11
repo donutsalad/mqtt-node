@@ -11,7 +11,7 @@ static EventGroupHandle_t webserver_event_group;
 
 void wait_for_wifi_config(void)
 {
-    EventBits_t event = xEventGroupWaitBits(
+    xEventGroupWaitBits(
         webserver_event_group,
         SERVER_CONFIG_OK,
         pdFALSE, pdFALSE,
@@ -21,7 +21,7 @@ void wait_for_wifi_config(void)
 
 void wait_for_webserver_start(void)
 {
-    EventBits_t bits = xEventGroupWaitBits(
+    xEventGroupWaitBits(
         webserver_event_group, 
         SERVER_READY, 
         pdFALSE, pdFALSE, 
@@ -31,7 +31,7 @@ void wait_for_webserver_start(void)
 
 void wait_for_shutdown_completion(void)
 {
-    EventBits_t event = xEventGroupWaitBits(
+    xEventGroupWaitBits(
         webserver_event_group,
         SERVER_SHUTDOWN,
         pdFALSE, pdFALSE,
@@ -39,9 +39,29 @@ void wait_for_shutdown_completion(void)
     );
 }
 
-static esp_err_t webserver_get_root(httpd_req_t *req)
+const char* unknown_entity   = "UNKNOWN ENTITY";
+const char* wifi_config_page = WIFI_CONFIG_HTML_WIFI_DETAILS;
+const char* wifi_stylesheet  = WIFI_CONFIG_HTML_PAGE_CSSFILE;
+
+static esp_err_t webserver_get_entity(httpd_req_t *req, wifi_entity_t entity)
 {
-    Print("Webserver", "Request for config page received, serving...");
+    const char** resource = NULL;
+
+    switch(entity)
+    {
+        case WIFI_ENTITY_WIFI_PAGE:
+            resource = &wifi_config_page;
+            break;
+
+        case WIFI_ENTITY_PAGE_CSS:
+            resource = &wifi_stylesheet;
+            break;
+
+        default:
+            resource = &unknown_entity;
+    }
+
+
     switch(httpd_resp_set_type(req, "text/html"))
     {
         case ESP_OK:
@@ -76,7 +96,7 @@ static esp_err_t webserver_get_root(httpd_req_t *req)
             return ESP_FAIL;
     }
 
-    switch(httpd_resp_send(req, WIFI_CONFIG_PAGE, HTTPD_RESP_USE_STRLEN))
+    switch(httpd_resp_send(req, *resource, HTTPD_RESP_USE_STRLEN))
     {
         case ESP_ERR_HTTPD_INVALID_REQ:
             Print("Webserver", "Invalid request pointer handed to argument?? Aborting...");
@@ -98,6 +118,18 @@ static esp_err_t webserver_get_root(httpd_req_t *req)
             Print("Webserver", "Served config page!");
             return ESP_OK;
     }
+}
+
+static esp_err_t webserver_get_root(httpd_req_t *req)
+{
+    Print("Webserver", "Request for config page received, serving...");
+    return webserver_get_entity(req, WIFI_ENTITY_WIFI_PAGE);
+}
+
+static esp_err_t webserver_get_style(httpd_req_t *req)
+{
+    Print("Webserver", "Request for stylesheet received, serving...");
+    return webserver_get_entity(req, WIFI_ENTITY_PAGE_CSS);
 }
 
 //ASCII hex to raw hex nibble downconversion
@@ -146,14 +178,15 @@ static inline void walkalong_conversion(char buffer[], int length)
     buffer[++i] = '\0';
 }
 
+//TODO: Standardise the a & b params.
 //Expected format:
-//s=<ssid>&p=<pass> in URL encoding
+//a=<ssid>&b=<pass> in URL encoding
 static int parse_post_parameters(char raw[], int length, char ssid[], int ssidMaxLen, char pass[], int passMaxLen)
 {
     for(int i = 0; i < length; i++)
     {
         //Copilot wrote this for me, the future is now! XD
-        if(raw[i] == 's' && raw[i + 1] == '=')
+        if(raw[i] == 'a' && raw[i + 1] == '=')
         {
             int j = 0;
             for(i += 2; i < length && raw[i] != '&' && j < ssidMaxLen; i++)
@@ -162,7 +195,7 @@ static int parse_post_parameters(char raw[], int length, char ssid[], int ssidMa
             }
             ssid[j] = '\0';
         }
-        else if(raw[i] == 'p' && raw[i + 1] == '=')
+        else if(raw[i] == 'b' && raw[i + 1] == '=')
         {
             int j = 0;
             for(i += 2; i < length && raw[i] != '&' && j < passMaxLen; i++)
@@ -329,8 +362,16 @@ static const httpd_uri_t config_uri = {
     .user_ctx  = NULL
 };
 
+static const httpd_uri_t style_uri = {
+    .uri       = "/style.css",
+    .method    = HTTP_GET,
+    .handler   = webserver_get_style,
+    .user_ctx  = NULL
+};
+
 //TODO: Add Error Handlers
 
+//TODO: STREAMLINE THE REPEATING SWITCHBLOCKS
 static httpd_handle_t create_webserver(void)
 {
     if(webserver_event_group == NULL)
@@ -383,6 +424,30 @@ static httpd_handle_t create_webserver(void)
 
         default:
             Print("Webserver", "Unhandled error while registering root uri handle! Aborting...");
+            return NULL;
+    }
+
+    switch(httpd_register_uri_handler(server, &style_uri))
+    {
+        case ESP_OK:
+            break;
+        
+        case ESP_ERR_INVALID_ARG:
+            Print("Webserver", "Invalid argument whilst registering stylesheet uri handle? Unsure whow we got this error... Aborting...");
+            return NULL;
+            //Eventually attempt to handle this since we're all the way to setting up a webserver
+
+        case ESP_ERR_HTTPD_HANDLER_EXISTS:
+            Print("Webserver", "Uri handler already exists! Aborting...");
+            return NULL;
+            //TODO: Deregister whatever handler is there and register this one in its place
+
+        case ESP_ERR_HTTPD_HANDLERS_FULL:
+            Print("Webserver", "Too many handlers registered! Aborting...");
+            return NULL;
+
+        default:
+            Print("Webserver", "Unhandled error while registering stylesheet uri handle! Aborting...");
             return NULL;
     }
 
@@ -507,6 +572,27 @@ int TriggerWebserverClose(void)
 
         default:
             Print("Webserver", "Unhandled error while unregistering root uri handle! Aborting...");
+            Print("Webserver", "If error persists, consider breaking on the following LoC due to it being non-critical - however please submit an issue on the repository.");
+            return SERVER_FATAL;
+    }
+
+    switch(httpd_unregister_uri(webserver, "/style.css"))
+    {
+        case ESP_OK:
+            break;
+
+        case ESP_ERR_INVALID_ARG:
+            Print("Webserver", "Invalid argument whilst unregistering stylesheet uri handle? Unsure whow we got this error, but it's not important. Continuing...");
+            resultant = SERVER_IGNORE;
+            break;
+
+        case ESP_ERR_NOT_FOUND:
+            Print("Webserver", "Uri handler not found! No matter, destroying webserver anyway. Continuing...");
+            resultant = SERVER_IGNORE;
+            break;
+
+        default:
+            Print("Webserver", "Unhandled error while unregistering stylesheet uri handle! Aborting...");
             Print("Webserver", "If error persists, consider breaking on the following LoC due to it being non-critical - however please submit an issue on the repository.");
             return SERVER_FATAL;
     }

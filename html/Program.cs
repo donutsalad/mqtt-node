@@ -34,7 +34,7 @@ else if(File.Exists(outputFile))
 } 
 
 File.WriteAllLines(outputFile, Configuration.FilesToProcess.ToList().ConvertAll<string>(
-    tuple => new HTMLStripper(tuple.file).CHeader(tuple.tag)
+    tuple => new HTMLStripper(tuple.file).CHeader(Configuration.HTML_DEFINE_PREAMBLE + tuple.tag)
 ));
 
 Console.WriteLine($"Done! Output File Contents:\n{File.ReadAllText(outputFile)}");

@@ -1,4 +1,5 @@
 #include <commons.h>
+#include <htmlsrc.h>
 
 #define AP_USER_CONNECTED       BIT0
 #define AP_USER_DISCONNECTED    BIT1
@@ -26,7 +27,7 @@
 #define WIFI_CONFIG_SSID_TAG    "s"
 #define WIFI_CONFIG_PASS_TAG    "p"
 //TODO: concat the above in the below
-#define WIFI_CONFIG_PAGE        "<html><head><title>ESP32 WiFi Config</title></head><body><h1>Configure LAN Access Point Details</h1><form action=\"/set\" method=\"POST\"><div><label for=\"s\">Network SSID (Name)</label><input name=\"s\" id=\"s\" placeholder=\"Your Network Here\"></div><div><label for=\"p\">Network Password</label><input name=\"p\" id=\"p\" placeholder=\"Password\"></div><div><button>Connect</button></div></form></body></html>"
+#define WIFI_CONFIG_PAGE        WIFI_CONFIG_HTML_WIFI_DETAILS
 #define WIFI_CONFIG_SET         "<html><head><title>ESP32 WiFi Config</title></head><body><h1>Configuration complete!</h1><p>Attempting to connect to the network, shutting down access point...</p></body></html>"
 
 #define WIFI_CONFIG_OK          0
@@ -48,6 +49,13 @@
 
 #define WIFI_DETAILS_OK         0
 #define WIFI_DETAILS_TOBIG      1
+
+#define WIFI_ENTITY_PAGE_CSS    0x0A
+#define WIFI_ENTITY_WIFI_PAGE   0x10
+#define WIFI_ENTITY_MQTT_PAGE   0x20
+#define WIFI_ENTITY_MODE_PAGE   0x30
+
+typedef char wifi_entity_t;
 
 int InitialiseAccessPoint(void);
 
