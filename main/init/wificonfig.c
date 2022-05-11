@@ -43,6 +43,12 @@ int get_wifi_details(char ssid[], int ssidBufferLength, char pass[], int passBuf
 
 int copy_wifi_details(wifi_connection_details_t *wifiDetails)
 {
+    if(wifiDetails == NULL)
+    {
+        Print("Init Manager", "WiFi details pointer is NULL.");
+        return WIFI_DETAILS_NULL;
+    }
+
     memset(wifiDetails->ssid, '\0', WIFI_SSID_BUFFER_MAX);
     memset(wifiDetails->pass, '\0', WIFI_PASS_BUFFER_MAX);
 

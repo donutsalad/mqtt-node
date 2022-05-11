@@ -439,15 +439,13 @@ static int config_mqtt_set_handler(char data[], int length)
 
     Print("Webserver", "Setting new mqtt config...");
     
-    //Not Yet Implemented
-    /*
-    switch(set_wifi_details(ssid, SSIDLength, pass, PASSLength))
+    switch(set_mqtt_config(endpoint, ENDPOINTLength, username, USERNAMELength))
     {
-        case WIFI_DETAILS_OK:
+        case MQTT_DETAILS_OK:
             Print("Webserver", "New mqtt config set successfully!");
             break;
 
-        case WIFI_DETAILS_TOBIG:
+        case MQTT_DETAILS_TOBIG:
             Print("Webserver", "New mqtt config buffers are too big! Aborting set...");
             Print("Webserver", "Please check the buffers in the src and open an issue on github if there is a mismatch!");
             return SERVER_CONFIG_UNSAVABLE;
@@ -456,7 +454,6 @@ static int config_mqtt_set_handler(char data[], int length)
             Print("Webserver", "Unhandled error while setting new mqtt config! Aborting set...");
             return SERVER_CONFIG_UNSAVABLE;
     }
-    */
 
     Print("Webserver", "Setting mqtt config saved flag.");
 
@@ -494,25 +491,25 @@ static int config_boot_set_handler(char data[], int length)
     }
 
     Print("Webserver", "Setting new boot config...");
-    
-    //Not Yet Implemented
-    /*
-    switch(set_wifi_details(ssid, SSIDLength, pass, PASSLength))
+
+    int bootmode_int = boot_config_mode_from_string(bootmode);
+    int bootdelay_int = boot_config_delay_from_string(bootdelay);
+
+    switch(set_boot_config(bootmode_int, bootdelay_int))
     {
-        case WIFI_DETAILS_OK:
+        case BOOT_DETAILS_OK:
             Print("Webserver", "New boot config set successfully!");
             break;
 
-        case WIFI_DETAILS_TOBIG:
-            Print("Webserver", "New boot config buffers are too big! Aborting set...");
-            Print("Webserver", "Please check the buffers in the src and open an issue on github if there is a mismatch!");
+        case BOOT_DETAILS_BADFORMAT:
+            Print("Webserver", "Bad format for boot config! Aborting set...");
             return SERVER_CONFIG_UNSAVABLE;
 
         default:
             Print("Webserver", "Unhandled error while setting new boot config! Aborting set...");
             return SERVER_CONFIG_UNSAVABLE;
     }
-    */
+
 
     Print("Webserver", "Setting boot config saved flag.");
 
@@ -534,8 +531,15 @@ static const char* get_mqtt_set_page() { return mqtt_set_ok_page; }
 static char rendered_boot_page[1024];
 static const char* get_boot_page()
 {
-    wifi_connection_details_t* details = wifi_details();
-    int format = snprintf(rendered_boot_page, sizeof(rendered_boot_page), WIFI_CONFIG_HTML_DONE_CONFIRM, details->ssid, details->pass, "Unchecked", "Unchecked", "Unchecked", "Unchecked");   
+    wifi_connection_details_t *wifi_config = wifi_details();
+    mqtt_config_t *mqtt_details = mqtt_config();
+    boot_config_t *boot_details = boot_config();
+    int format = snprintf(rendered_boot_page, sizeof(rendered_boot_page), WIFI_CONFIG_HTML_DONE_CONFIRM, 
+        wifi_config->ssid, wifi_config->pass, 
+        mqtt_details->address, mqtt_details->username,
+        bootconfig_type_from_int(boot_details->mode), boot_details->delay
+    );
+    
     if(format < 0)
     {
         Print("Webserver", "Error while rendering boot confirmation page!");

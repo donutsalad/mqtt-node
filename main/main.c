@@ -97,15 +97,67 @@ void app_main(void)
             return;
     }
 
-    char* ssid = get_wifi_ssid_nullterm_safe();
-    char* pass = get_wifi_pass_nullterm_safe();
+    wifi_connection_details_t wifi_config;
+    mqtt_config_t mqtt_details;
+    boot_config_t boot_details;
 
-    printf("DEBUG MESSAGE:\nRecovered WiFi Details are as follows:\nSSID: %s\nPassword: %s\n", 
-        ssid, pass
-    );
+    switch(copy_wifi_details(&wifi_config))
+    {
+        case WIFI_DETAILS_OK:
+            Print("System", "WiFi config retrieved");
+            break;
 
-    free(ssid);
-    free(pass);
+        case WIFI_DETAILS_NULL:
+            Print("System", "WiFi config pointer is NULL");
+            Print("System", "Startup error occured! Rebooting...");
+            esp_restart();
+            return;
+
+        default:
+            Print("System", "WiFi config retrieval failed! Rebooting...");
+            esp_restart();
+            return;
+    }
+
+    switch(copy_mqtt_config(&mqtt_details))
+    {
+        case MQTT_DETAILS_OK:
+            Print("System", "MQTT config retrieved");
+            break;
+        
+        case MQTT_DETAILS_NULL:
+            Print("System", "MQTT config pointer is NULL");
+            Print("System", "Startup error occured! Rebooting...");
+            esp_restart();
+            return;
+
+        default:
+            Print("System", "MQTT config retrieval failed! Rebooting...");
+            esp_restart();
+            return;
+    }
+
+    switch(copy_boot_config(&boot_details))
+    {
+        case BOOT_DETAILS_OK:
+            Print("System", "Boot config retrieved");
+            break;
+        
+        case BOOT_DETAILS_NULL:
+            Print("System", "Boot config pointer is NULL");
+            Print("System", "Startup error occured! Rebooting...");
+            esp_restart();
+            return;
+
+        default:
+            Print("System", "Boot config retrieval failed! Rebooting...");
+            esp_restart();
+            return;
+    }
+
+    printf("DEBUG MESSAGE:\nRecovered WiFi Details are as follows:\nSSID: %s\nPassword: %s\n", wifi_config.ssid, wifi_config.pass);
+    printf("DEBUG MESSAGE:\nRecovered MQTT Details are as follows:\nHost: %s\nUsername: %s\n", mqtt_details.address, mqtt_details.username);
+    printf("DEBUG MESSAGE:\nRecovered Boot Details are as follows:\nBoot Mode: %d\nBoot Delay: %d\n", boot_details.mode, boot_details.delay);
 
     fflush(stdout);
     return;
