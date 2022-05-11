@@ -103,9 +103,14 @@
 #define WIFI_SET_CODE_MQTT      0x02
 #define WIFI_SET_CODE_DENY      0x03
 #define WIFI_SET_CODE_MODE      0x04
+#define WIFI_SET_CODE_SAVE      0x05
+
+#define RENDER_PAGE_ID_BOOT     0x00
+#define RENDER_PAGE_ID_SAVE     0x01
 
 typedef char wifi_entity_t;
 typedef char wifi_set_code_t;
+typedef char render_page_id_t;
 
 int InitialiseAccessPoint(void);
 

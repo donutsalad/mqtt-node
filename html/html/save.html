@@ -1,0 +1,38 @@
+<html>
+	<head>
+		<title>ESP32 MQTT Node Setup</title>
+		<link rel="stylesheet" href="style.css">
+	</head>
+	<body>
+		<div class="card">
+			<div class="header">
+				Configuration Complete!
+			</div>
+			<div class="body">
+				<div class="message">
+					<p>Awesome! We've just saved your data to the NVS and started,</p>
+                    <p>rebooting here's a quick synopsis of the information we've saved:</p>
+					<p></p>
+					<hr />
+					<p>WiFi SSID: %s</p>
+					<p>WiFi Password: %s</p>
+					<p>MQTT Broker: %s</p>
+					<p>MQTT Username: %s</p>
+					<p>Boot Mode: %s</p>
+					<p>Poll Delay: %d(ms)</p>
+					<hr />
+					<p>If any of this information is incorrect, don't worry the boot</p>
+					<p>sequence will attempt to validate it's successful, if not; it will</p>
+                    <p>reboot and request new input. If the boot sequence is successful</p>
+                    <p>you can clear the NVS over MQTT, or make sure it's out of range</p>
+                    <p>and start afresh!</p>
+					<p class="new">If the details are repetitively incorrect it's likely an issue with the</p>
+					<p>firmware, please open a GitHub issue!</p>
+				</div>
+			</div>
+			<div class="footer">
+				<a href="https://github.com/donutsalad/mqtt-node">Open GitHub Repo</a>
+			</div>
+		</div>
+	</body>
+</html>

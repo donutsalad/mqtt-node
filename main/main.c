@@ -124,11 +124,11 @@ void app_main(void)
 
     //Ensure everything is cleaned up
 
-BOOT_CONFIGURED:
-
     wifi_connection_details_t wifi_config;
     mqtt_config_t mqtt_details;
     boot_config_t boot_details;
+
+BOOT_CONFIGURED:
 
     switch(copy_wifi_details(&wifi_config))
     {

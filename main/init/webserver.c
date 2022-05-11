@@ -1,4 +1,5 @@
-#include "ap_config.h"
+#include "restore.h"
+//#include "ap_config.h" occurs in restore.h, avoiding a circular dependency.
 
 #include <stdio.h>
 
@@ -466,14 +467,10 @@ static int config_mqtt_set_handler(char data[], int length)
 }
 
 static const int BOOTMODELength = BOOT_MODE_BUFFER; static const int BOOTDELAYLength = BOOT_DELAY_BUFFER;
-static int config_boot_set_handler(char data[], int length)
+static int config_boot_save_commons(char data[], int length)
 {
     char bootmode[BOOTMODELength];
     char bootdelay[BOOTDELAYLength];
-
-    //Now Redundant.
-    //memset(ssid, '\0', sizeof(ssid));
-    //memset(pass, '\0', sizeof(pass));
 
     switch(parse_post_parameters(data, length, bootmode, ENDPOINTLength, bootdelay, USERNAMELength))
     {
@@ -510,8 +507,65 @@ static int config_boot_set_handler(char data[], int length)
             return SERVER_CONFIG_UNSAVABLE;
     }
 
+    return SERVER_CONFIG_OK;
+}
+
+static int config_boot_set_handler(char data[], int length)
+{
+    switch(config_boot_save_commons(data, length))
+    {
+        case SERVER_CONFIG_OK:
+            Print("Webserver", "Boot config parsed and loaded successfully!");
+            break;
+
+        case SERVER_CONFIG_BADFORMAT:
+            Print("Webserver", "Bad format for boot config! Aborting set...");
+            return SERVER_CONFIG_BADFORMAT;
+
+        default:
+            Print("Webserver", "Unhandled error while parsing boot config! Aborting set...");
+            return SERVER_CONFIG_UNSAVABLE;
+    }
 
     Print("Webserver", "Setting boot config saved flag.");
+
+    xEventGroupSetBits(
+        webserver_event_group, 
+        SERVER_BOOT_CONFIG | SERVER_CONFIG_OKAY
+    );
+
+    return SERVER_CONFIG_OK;
+}
+
+static int config_save_set_handler(char data[], int length)
+{
+    switch(config_boot_save_commons(data, length))
+    {
+        case SERVER_CONFIG_OK:
+            Print("Webserver", "Boot config parsed and loaded successfully!");
+            break;
+
+        case SERVER_CONFIG_BADFORMAT:
+            Print("Webserver", "Bad format for boot config! Aborting set...");
+            return SERVER_CONFIG_BADFORMAT;
+
+        default:
+            Print("Webserver", "Unhandled error while parsing boot config! Aborting set...");
+            return SERVER_CONFIG_UNSAVABLE;
+    }
+
+    switch(update_restore_config(wifi_details(), mqtt_config(), boot_config()))
+    {
+        case UPDATE_RESTORE_OK:
+            Print("Webserver", "Config saved successfully!");
+            break;
+
+        default:
+            Print("Webserver", "Config save failed! Aborting set...");
+            return SERVER_CONFIG_UNSAVABLE;
+    }
+
+    Print("Webserver", "Saving boot config saved flag.");
 
     xEventGroupSetBits(
         webserver_event_group, 
@@ -529,12 +583,33 @@ static const char* get_mqtt_set_page() { return mqtt_set_ok_page; }
 //We could free immediately after served. 
 //const char* boot_buffer = boot_set_ok_page();
 static char rendered_boot_page[1024];
-static const char* get_boot_page()
+
+static const char* confirmation_page_boot_template = WIFI_CONFIG_HTML_DONE_CONFIRM;
+static const char* confirmation_page_save_template = WIFI_CONFIG_HTML_SAVE_CONFIRM;
+
+static const char* render_page(render_page_id_t page_id)
 {
+    const char* *page_template = NULL;
+    switch(page_id)
+    {
+        case RENDER_PAGE_ID_BOOT:
+            page_template = &confirmation_page_boot_template;
+            break;
+        
+        case RENDER_PAGE_ID_SAVE:
+            page_template = &confirmation_page_save_template;
+            break;
+
+        default:
+            Print("Webserver", "Unknown page id!");
+            return "UNKNOWN PAGE RENDER REQUEST ID";
+    }
+
     wifi_connection_details_t *wifi_config = wifi_details();
     mqtt_config_t *mqtt_details = mqtt_config();
     boot_config_t *boot_details = boot_config();
-    int format = snprintf(rendered_boot_page, sizeof(rendered_boot_page), WIFI_CONFIG_HTML_DONE_CONFIRM, 
+
+    int format = snprintf(rendered_boot_page, sizeof(rendered_boot_page), *page_template, 
         wifi_config->ssid, wifi_config->pass, 
         mqtt_details->address, mqtt_details->username,
         bootconfig_type_from_int(boot_details->mode), boot_details->delay
@@ -547,7 +622,7 @@ static const char* get_boot_page()
     }
     else if(format >= sizeof(rendered_boot_page))
     {
-        Print("Webserver", "Boot confirmation page is too big!");
+        Print("Webserver", "Confirmation page is too big!");
         return "BUFFER OVERFLOW ERROR";
     }
 
@@ -559,6 +634,9 @@ static const char* get_boot_page()
     Print("Webserver", "Boot confirmation page rendered successfully!");
     return (const char*) rendered_boot_page;
 }
+
+static const char* get_boot_page() { return render_page(RENDER_PAGE_ID_BOOT); }
+static const char* get_save_page() { return render_page(RENDER_PAGE_ID_SAVE); }
 
 static esp_err_t webserver_set_entity(httpd_req_t *req, wifi_set_code_t set, char* tempDebugMessage)
 {
@@ -593,6 +671,11 @@ static esp_err_t webserver_set_entity(httpd_req_t *req, wifi_set_code_t set, cha
         case WIFI_SET_CODE_MODE:
             set_handler = &config_boot_set_handler;
             ok_responce = &get_boot_page;
+            break;
+
+        case WIFI_SET_CODE_SAVE:
+            set_handler = &config_save_set_handler;
+            ok_responce = &get_save_page;
             break;
 
         default:
@@ -696,6 +779,19 @@ static esp_err_t webserver_set_boot(httpd_req_t *req)
     return webserver_get_entity(req, WIFI_ENTITY_DENY_BOOT);
 }
 
+static esp_err_t webserver_set_save(httpd_req_t *req)
+{
+    Print("Webserver", "POST Request for SAVE config recieved...");
+    EventBits_t bits = xEventGroupGetBits(webserver_event_group);
+    if(bits & (SERVER_WIFI_CONFIG | SERVER_MQTT_CONFIG))
+    {
+        return webserver_set_entity(req, WIFI_SET_CODE_SAVE, "This URI is: SET SAVE");
+    }
+
+    Print("Webserver", "Other configs are not yet set! Serving ping root page...");
+    return webserver_get_entity(req, WIFI_ENTITY_DENY_BOOT);
+}
+
 static int attempt_register_uri_handler(httpd_handle_t server, const httpd_uri_t *uri, char* tempDebugMessage)
 {
     Print("Webserver", "The following message is the only dynamic message in the following function. Please note the source.");
@@ -781,6 +877,13 @@ static const httpd_uri_t boot_set_uri = {
     .user_ctx  = NULL
 };
 
+static const httpd_uri_t save_set_uri = {
+    .uri       = "/save",
+    .method    = HTTP_POST,
+    .handler   = webserver_set_save,
+    .user_ctx  = NULL
+};
+
 //TODO: Add Error Handlers
 
 //TODO: STREAMLINE THE REPEATING SWITCHBLOCKS
@@ -794,6 +897,7 @@ static httpd_handle_t create_webserver(void)
     }
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.max_uri_handlers = 16;
     httpd_handle_t server = NULL;
 
     switch(httpd_start(&server, &config))
@@ -819,12 +923,13 @@ static httpd_handle_t create_webserver(void)
     if(attempt_register_uri_handler(server, &style_uri, "This URI is: STYLE")) return NULL;
 
     if(attempt_register_uri_handler(server, &wifi_get_uri, "This URI is: WIFI")) return NULL;
-    if(attempt_register_uri_handler(server, &mqtt_get_uri, "This URI is: WIFI")) return NULL;
-    if(attempt_register_uri_handler(server, &boot_get_uri, "This URI is: WIFI")) return NULL;
+    if(attempt_register_uri_handler(server, &mqtt_get_uri, "This URI is: MQTT")) return NULL;
+    if(attempt_register_uri_handler(server, &boot_get_uri, "This URI is: BOOT")) return NULL;
 
     if(attempt_register_uri_handler(server, &wifi_set_uri, "This URI is: WIFI")) return NULL;
-    if(attempt_register_uri_handler(server, &mqtt_set_uri, "This URI is: WIFI")) return NULL;
-    if(attempt_register_uri_handler(server, &boot_set_uri, "This URI is: WIFI")) return NULL;
+    if(attempt_register_uri_handler(server, &mqtt_set_uri, "This URI is: MQTT")) return NULL;
+    if(attempt_register_uri_handler(server, &boot_set_uri, "This URI is: BOOT")) return NULL;
+    if(attempt_register_uri_handler(server, &save_set_uri, "This URI is: SAVE")) return NULL;
 
     return server;
 }
@@ -944,6 +1049,10 @@ int TriggerWebserverClose(void)
     else if(resultbuf == SERVER_IGNORE) resultant = SERVER_IGNORE;
 
     resultbuf = attempt_deregister_uri(webserver, "/boot", "This URI is: BOOT");
+    if(resultbuf == SERVER_FATAL) return SERVER_FATAL;
+    else if(resultbuf == SERVER_IGNORE) resultant = SERVER_IGNORE;
+
+    resultbuf = attempt_deregister_uri(webserver, "/save", "This URI is: SAVE");
     if(resultbuf == SERVER_FATAL) return SERVER_FATAL;
     else if(resultbuf == SERVER_IGNORE) resultant = SERVER_IGNORE;
 

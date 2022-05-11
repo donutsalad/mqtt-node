@@ -9,6 +9,7 @@ public static class Configuration
         ("DENY_BOOTNOW", "html/deny.html"),
         ("MODE_DETAILS", "html/mode.html"),
         ("DONE_CONFIRM", "html/done.html"),
+        ("SAVE_CONFIRM", "html/save.html"),
         ("E400_ERRPAGE", "html/ferr.html"),
         ("E404_ERRPAGE", "html/none.html"),
         ("E500_ERRPAGE", "html/ierr.html"),
