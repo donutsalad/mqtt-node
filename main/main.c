@@ -7,7 +7,8 @@
 #include <esp_event.h>
 
 #include <nvs_init.h>
-#include <ap_config.h>
+#include <restore.h>
+//#include <ap_config.h> ocurrence in restore.h
 
 void app_main(void)
 {
@@ -29,6 +30,30 @@ void app_main(void)
 
         default:
             Print("System", "NVS unhandled error! Aborting startup...");
+            return;
+    }
+
+    switch(attempt_restore())
+    {
+        case ATTEMPT_RESTORE_OK:
+            Print("System", "Restore successful!");
+            Print("System", "Skipping access point setup, attempting to launch with loaded boot settings...");
+            goto BOOT_CONFIGURED;
+
+        case ATTEMPT_RESTORE_NONE:
+            Print("System", "No config to restore");
+            Print("System", "Prompting user to configure boot settings...");
+            break;
+
+        case ATTEMPT_RESTORE_NVSERR:
+            Print("System", "NVS error during restore");
+            Print("System", "Unable to restore config from NVS, assuming no valid data present.");
+            Print("System", "Prompting user to configure boot settings...");
+            break;
+
+        default:
+            Print("System", "Unhandled error during restore attempt");
+            Print("System", "Unable to restore config from NVS, aborting startup.");
             return;
     }
 
@@ -96,6 +121,10 @@ void app_main(void)
             Print("System", "WiFi Setup Failed! Unknown error! Aborting startup...");
             return;
     }
+
+    //Ensure everything is cleaned up
+
+BOOT_CONFIGURED:
 
     wifi_connection_details_t wifi_config;
     mqtt_config_t mqtt_details;
