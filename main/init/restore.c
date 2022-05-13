@@ -4,6 +4,8 @@ static restore_config_t local_restore_data;
 
 int attempt_restore(void)
 {
+    Print("Config Restoration", "Attempting to restore config...");
+
     nvs_handle_t nvs;
 
     switch(nvs_open("storage", NVS_READWRITE, &nvs))
@@ -97,6 +99,8 @@ int update_restore_config(wifi_connection_details_t *wifiDetails, mqtt_config_t 
         Print("Config Restoration", "WiFi, MQTT or Boot details pointer is NULL");
         return UPDATE_RESTORE_NULL;
     }
+
+    Print("Config Restoration", "Updating config...");
 
     nvs_handle_t nvs;
 

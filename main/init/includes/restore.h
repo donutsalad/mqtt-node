@@ -4,6 +4,7 @@
 #include <nvs_flash.h>
 #include <esp_err.h>
 
+//TODO: Avoid including this somehow
 #include <ap_config.h>
 
 #define UPDATE_RESTORE_OK       0
