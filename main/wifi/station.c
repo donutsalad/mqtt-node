@@ -11,15 +11,17 @@
 #include <lwip/dns.h>
 #include <lwip/netdb.h>
 
-#include <freertos/event_groups.h>
-
 #include "ap_config.h"
 
 static esp_netif_t *sta_netif = NULL;
 static EventGroupHandle_t wifi_event_group = NULL;
 
+EventGroupHandle_t get_wifi_event_group(void) { return wifi_event_group; }
+
 //https://www.esp32.com/viewtopic.php?t=349
 static uint8_t disconnection_reason_buffer = 255;
+
+uint8_t get_disconnection_reason(void) { return disconnection_reason_buffer; }
 
 static struct WiFi_EventHandlers {
     esp_event_handler_instance_t wifi;
@@ -32,6 +34,13 @@ static struct WiFi_IPdata {
     esp_ip4_addr_t netmask;
     esp_ip4_addr_t gateway;
 } wifi_ip_data;
+
+static struct WiFi_Callbacks {
+    void (*callback)(void);
+    void (*disconnection_handler)(void);
+    void (*stop_handler)(void);
+    void (*exhaustion_callback)(void);
+} wifi_callbacks;
 
 static wifi_config_t wifi_client_config = {
 	.sta = {
@@ -104,6 +113,53 @@ static void _ip_event_handler(
             memset(&wifi_ip_data, 0, sizeof(wifi_ip_data));
             xEventGroupSetBits(wifi_event_group, WIFI_STATION_LOST_IP);
             break;
+    }
+}
+
+int DisconnectionEntailment(void)
+{
+    switch(disconnection_reason_buffer)
+    {
+        case WIFI_DISCONNECTION_UNSPECIFIED:
+        case WIFI_DISCONNECTION_AUTH_EXPIRE:
+        case WIFI_DISCONNECTION_AUTH_LEAVE:
+        case WIFI_DISCONNECTION_ASSOC_EXPIRE:
+        case WIFI_DISCONNECTION_ASSOC_TOOMANY:
+        case WIFI_DISCONNECTION_NOT_AUTHED:
+        case WIFI_DISCONNECTION_NOT_ASSOCED:
+        case WIFI_DISCONNECTION_ASSOC_LEAVE:
+        case WIFI_DISCONNECTION_ASSOC_NOT_AUTHED:
+        case WIFI_DISCONNECTION_DISASSOC_PWRCAP_BAD:
+        case WIFI_DISCONNECTION_DISASSOC_SUPCHAN_BAD:
+        case WIFI_DISCONNECTION_IE_INVALID:
+        case WIFI_DISCONNECTION_MIC_FAILURE:
+        case WIFI_DISCONNECTION_4WAY_HANDSHAKE_TIMEOUT:
+        case WIFI_DISCONNECTION_GROUP_KEY_UPDATE_TIMEOUT:
+        case WIFI_DISCONNECTION_IE_IN_4WAY_DIFFERS:
+        case WIFI_DISCONNECTION_GROUP_CIPHER_INVALID:
+        case WIFI_DISCONNECTION_PAIRWISE_CIPHER_INVALID:
+        case WIFI_DISCONNECTION_AKMP_INVALID:
+        case WIFI_DISCONNECTION_UNSUPP_RSN_IE_VERSION:
+        case WIFI_DISCONNECTION_INVALID_RSN_IE_CAP:
+        case WIFI_DISCONNECTION_802_1X_AUTH_FAILED:
+        case WIFI_DISCONNECTION_CIPHER_SUITE_REJECTED:
+
+            return DISCONNECT_RESPONCE_RETRY;
+
+        case WIFI_DISCONNECTION_BEACON_TIMEOUT:
+        case WIFI_DISCONNECTION_ASSOC_FAIL:
+        case WIFI_DISCONNECTION_HANDSHAKE_TIMEOUT:
+
+            return DISCONNECT_RESPONCE_RETRYWAIT;
+
+
+        case WIFI_DISCONNECTION_AUTH_FAIL:
+            return DISCONNECT_RESPONCE_REJECT;
+
+        case WIFI_DISCONNECTION_NO_AP_FOUND:
+            return DISCONNECT_RESPONCE_NONEFOUND;
+
+        default: return DISCONNECT_RESPONCE_UNKNOWN;
     }
 }
 
@@ -295,4 +351,102 @@ int ConnectWithGlobalConfig(void)
     }
 
     return WIFI_STARTUP_OKAY;
+}
+
+int StartWiFiStation(
+    void (*callback)(void), 
+    void (*disconnection_handler)(void), 
+    void (*stop_handler)(void), 
+    void (*exhaustion_callback)(void)
+) {
+    wifi_callbacks.callback               = callback;
+    wifi_callbacks.disconnection_handler  = disconnection_handler;
+    wifi_callbacks.stop_handler           = stop_handler;
+    wifi_callbacks.exhaustion_callback    = exhaustion_callback;
+    
+    switch(ConnectWithGlobalConfig())
+    {
+        case WIFI_STARTUP_OKAY:
+            Print("WiFi Station", "WiFi started.");
+            break;
+
+        case WIFI_ALREADY_INSTANTIATED: return WIFI_ALREADY_INSTANTIATED;
+        case WIFI_STARTUP_FAILED:       return WIFI_STARTUP_FAILED;
+        case WIFI_STA_INIT_FAILED:      return WIFI_STA_INIT_FAILED;
+        case WIFI_CONFIG_BAD:           return WIFI_CONFIG_BAD;
+        case WIFI_CONFIG_NVS_ERR:       return WIFI_CONFIG_NVS_ERR;
+        default:                        return WIFI_SETUP_SETUP_FAILED;
+    }
+
+    switch(StartWiFiTask())
+    {
+        case WIFI_TASK_CREATED:
+            Print("WiFi Station", "WiFi task created.");
+			break;
+
+        case WIFI_TASK_ALREADY_CREATED: return WIFI_SETUP_INVALID;
+        case WIFI_TASK_MEMORY_FAILURE:  return WIFI_SETUP_MEMORY_ERR;
+        case WIFI_TASK_UNKNOWN_FAILURE: return WIFI_SETUP_SETUP_FAILED;
+        default:                        return WIFI_SETUP_SETUP_FAILED;
+    }
+
+    switch(StartWiFiTerminationListener())
+    {
+        case WIFI_TASK_CREATED:
+            Print("WiFi Station", "WiFi termination listener task created.");
+			break;
+
+        case WIFI_TASK_ALREADY_CREATED: return WIFI_SETUP_INVALID;
+        case WIFI_TASK_MEMORY_FAILURE:  return WIFI_SETUP_MEMORY_ERR;
+        case WIFI_TASK_UNKNOWN_FAILURE: return WIFI_SETUP_SETUP_FAILED;
+        default:                        return WIFI_SETUP_SETUP_FAILED;
+    }
+
+    //TODO: double check ??? uh
+
+    return WIFI_STARTUP_OKAY;
+}
+
+
+void Reject(void)
+{
+    //Callback faliure.
+}
+
+void Exhaustion(void)
+{
+    //Callback faliure.
+}
+
+void InnocentExhaustion(void)
+{
+    //Callback failure.
+}
+
+void UnknownExhaustion(void)
+{
+    //Callback failure?
+}
+
+
+void Connected(void)
+{
+    //Callback handling only
+}
+
+void Disconnected(void)
+{
+    //Callback handlers blah
+}
+
+void InvalidDuality(void)
+{
+    //Disconnect and reconnect to reset connection
+}
+
+void Termination(void)
+{
+    StopWiFiTask();
+    //Callback handlers blah
+    //Stop the background task and dissassemble the class (but using the actual callers etc.)
 }

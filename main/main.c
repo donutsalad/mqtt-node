@@ -9,6 +9,7 @@
 #include <nvs_init.h>
 #include <restore.h>
 //#include <ap_config.h> ocurrence in restore.h
+#include <wifistation.h>
 
 #define START_SYSTEM_SUCCESS    0
 #define START_SYSTEM_FAILURE    1
@@ -18,6 +19,26 @@
 #define GET_CONFIG_WIFI_FAILURE 2
 #define GET_CONFIG_REBOOT_NOW   3
 #define GET_CONFIG_FAILURE      4
+
+static void WiFiConnectedCallback(void)
+{
+    Print("WiFi Connected Callback", "WiFi Connected Callback");
+}
+
+static void WiFiDisconnectedHandler(void)
+{
+    Print("WiFi Disconnected Handler", "WiFi Disconnected Handler");
+}
+
+static void WiFiStopHandler(void)
+{
+    Print("WiFi Stop Handler", "WiFi Stop Handler");
+}
+
+static void WiFiExhaustionCallback(void)
+{
+    Print("WiFi Exhaustion Callback", "WiFi Exhaustion Callback");
+}
 
 int start_system(void)
 {
@@ -88,6 +109,45 @@ int start_system(void)
     Print("System Startup", "-----------------------------------------------------");
 
     fflush(stdout);
+
+    switch(StartWiFiStation(
+        &WiFiConnectedCallback,
+        &WiFiDisconnectedHandler,
+        &WiFiStopHandler,
+        &WiFiExhaustionCallback
+    )) 
+    {
+        case WIFI_STARTUP_OKAY:
+            Print("System Startup", "WiFi Station started successfully");
+            break;
+
+        case WIFI_ALREADY_INSTANTIATED:
+			return START_SYSTEM_FAILURE;
+
+        case WIFI_STARTUP_FAILED:
+			return START_SYSTEM_FAILURE;
+
+        case WIFI_STA_INIT_FAILED:
+			return START_SYSTEM_FAILURE;
+
+        case WIFI_CONFIG_BAD:
+			return START_SYSTEM_FAILURE;
+
+        case WIFI_CONFIG_NVS_ERR:
+			return START_SYSTEM_FAILURE;
+
+
+        case WIFI_SETUP_INVALID:
+			return START_SYSTEM_FAILURE;
+
+        case WIFI_SETUP_MEMORY_ERR:
+			return START_SYSTEM_FAILURE;
+
+        case WIFI_SETUP_SETUP_FAILED:
+			return START_SYSTEM_FAILURE;
+
+    }
+
     return START_SYSTEM_SUCCESS;
 }
 
