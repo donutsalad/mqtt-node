@@ -24,6 +24,21 @@ void WiFi_Termination_Listener(void *pvParameters)
     Print("WiFi Termination Listener", "WiFi stop flag set. Terminating.");
     xEventGroupClearBits(get_wifi_event_group(), WIFI_STATION_STOPPING | WIFI_STATION_STARTED);
     Termination();
+    //We shouldn't need this; but just in case - better to be safe.
+    Print("WiFi Termination Listener", "Termination routine returned? Unsure how this happened - if you get errors, check the Termination() function.");
+    Print("WiFi Termination Listener", "Terminating WiFi task. Hopefully this hasn't caused a crash.");
+    vTaskDelete(NULL);
+}
+
+void KillWiFiTerminationListener(void)
+{
+    if (xTerminationListener != NULL) {
+        Print("WiFi Termination Listener", "Killing WiFi termination listener.");
+        vTaskDelete(xTerminationListener);
+        xTerminationListener = NULL;
+    }
+
+    Print("WiFi Termination Listener", "WiFi termination listener dead.");
 }
 
 int StartWiFiTerminationListener(void)

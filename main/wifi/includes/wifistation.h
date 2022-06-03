@@ -3,6 +3,7 @@
 #include <freertos/event_groups.h>
 
 #define WIFI_TERMINATION_LISTENER_STACK     2048
+#define WIFI_TERMINATION_HANDLER_STACK      2048
 #define WIFI_BACKGROUND_TASK_STACK          2048
 
 #define WIFI_STARTUP_OKAY           0
@@ -15,6 +16,10 @@
 #define WIFI_SETUP_INVALID          6
 #define WIFI_SETUP_MEMORY_ERR       7
 #define WIFI_SETUP_SETUP_FAILED     8
+
+#define WIFI_SHUTDOWN_OKAY          0
+#define WIFI_SHUTDOWN_NOT_INIT      1
+#define WIFI_SHUTDOWN_UNSAVABLE     2
 
 #define WIFI_TASK_CREATED           0
 #define WIFI_TASK_ALREADY_CREATED   1
@@ -71,10 +76,11 @@
 #define RETRY_MAX_EXHAUSTED 5
 #define RETRY_MAX_UNKNOWN   5
 
-int StartWiFiStation(void (*callback)(void), void (*disconnection_handler)(void), void (*stop_handler)(void), void (*exhaustion_callback)(void));
+int StartWiFiStation(void (*callback)(void), void (*disconnection_handler)(void), void (*stop_handler)(void), void (*exhaustion_callback)(void), void (*bad_config_callback)(void));
 
 int StartWiFiTask(void);
 void StopWiFiTask(void);
+void KillWiFiTerminationListener(void);
 int StartWiFiTerminationListener(void);
 
 void Reject(void);

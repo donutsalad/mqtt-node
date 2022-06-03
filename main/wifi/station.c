@@ -40,6 +40,7 @@ static struct WiFi_Callbacks {
     void (*disconnection_handler)(void);
     void (*stop_handler)(void);
     void (*exhaustion_callback)(void);
+    void (*bad_config_callback)(void);
 } wifi_callbacks;
 
 static wifi_config_t wifi_client_config = {
@@ -357,12 +358,14 @@ int StartWiFiStation(
     void (*callback)(void), 
     void (*disconnection_handler)(void), 
     void (*stop_handler)(void), 
-    void (*exhaustion_callback)(void)
+    void (*exhaustion_callback)(void),
+    void (*bad_config_callback)(void)
 ) {
     wifi_callbacks.callback               = callback;
     wifi_callbacks.disconnection_handler  = disconnection_handler;
     wifi_callbacks.stop_handler           = stop_handler;
     wifi_callbacks.exhaustion_callback    = exhaustion_callback;
+    wifi_callbacks.bad_config_callback    = bad_config_callback;
     
     switch(ConnectWithGlobalConfig())
     {
@@ -408,45 +411,183 @@ int StartWiFiStation(
 }
 
 
+//BAD AUTH
 void Reject(void)
 {
-    //Callback faliure.
+    Print("WiFi Station", "Authentication failed. Setup configuration should be rejected - executing bad config callback.");
+    Termination();
+    wifi_callbacks.bad_config_callback();
 }
 
+//Can't find etc..
 void Exhaustion(void)
 {
-    //Callback faliure.
+    Print("WiFi Station", "Exhaustion. Setup configuration might be invalid - executing exhaustion callback.");
+    Termination();
+    wifi_callbacks.exhaustion_callback();
 }
 
+//Beacon time outs etc - so not invalid but failure nonetheless.
 void InnocentExhaustion(void)
 {
-    //Callback failure.
+    Print("WiFi Station", "Innocent exhaustion. Setup configuration could be invalid - executing exhaustion callback.");
+    Termination();
+    wifi_callbacks.exhaustion_callback();
 }
 
+//Unhandled error so not really something we wanna try again just in case.
 void UnknownExhaustion(void)
 {
-    //Callback failure?
+    Print("WiFi Station", "Unhandled exhaustion. Setup configuration might be invalid, not sure - executing bad config callback to be safe.");
+    Termination();
+    wifi_callbacks.bad_config_callback();
 }
 
 
 void Connected(void)
 {
-    //Callback handling only
+    Print("WiFi Station", "Connected to AP.");
+    wifi_callbacks.callback();
 }
 
 void Disconnected(void)
 {
-    //Callback handlers blah
+    Print("WiFi Station", "Disconnected from AP.");
+    wifi_callbacks.disconnection_handler();
 }
 
 void InvalidDuality(void)
 {
     //Disconnect and reconnect to reset connection
+    Print("WiFi Station", "Invalid duality, could indicate critical errors - terminating! If issue persists please check the src or open a github issue!");
+    Termination();
+}
+
+//TODO: NEED TO DEREGISTER THE HANDLERS!!
+int Terminate(void)
+{
+    StopWiFiTask();
+    KillWiFiTerminationListener(); //Should kill that task gracefully through dissociated handler task even if said task called this.
+
+    switch(esp_event_handler_unregister(
+        WIFI_EVENT, ESP_EVENT_ANY_ID,
+        &_wifi_event_handler
+    )) 
+    {
+        case ESP_OK:
+            Print("WiFi Station", "WiFi event handler unregistered.");
+            break;
+
+        case ESP_ERR_INVALID_ARG:
+            Print("WiFi Station", "Invalid combination of event base and event ID?! Please check src or open a github issue!");
+            return WIFI_SHUTDOWN_UNSAVABLE;
+
+        default:
+            Print("WiFi Station", "WiFi event handler unregister failed for unknown reason!");
+            return WIFI_SHUTDOWN_UNSAVABLE;
+    }
+
+    switch(esp_event_handler_unregister(
+        IP_EVENT, IP_EVENT_STA_GOT_IP,
+        &_ip_event_handler
+    )) 
+    {
+        case ESP_OK:
+            Print("WiFi Station", "IP event handler unregistered.");
+            break;
+
+        case ESP_ERR_INVALID_ARG:
+            Print("WiFi Station", "Invalid combination of event base and event ID?! Please check src or open a github issue!");
+            return WIFI_SHUTDOWN_UNSAVABLE;
+
+        default:
+            Print("WiFi Station", "IP event handler unregister failed for unknown reason!");
+            return WIFI_SHUTDOWN_UNSAVABLE;
+    }
+
+    if(wifi_event_group != NULL)
+    {
+        wifi_event_group = NULL;
+    }
+
+    if(sta_netif != NULL)
+    {
+        esp_netif_destroy(sta_netif);
+        sta_netif = NULL;
+    }
+
+    switch(esp_wifi_stop())
+    {
+        case ESP_OK:
+            Print("WiFi Station", "WiFi backend stopped.");
+            break;
+
+        case ESP_ERR_WIFI_NOT_INIT:
+            Print("WiFi Station", "WiFi backend not running.");
+            return WIFI_SHUTDOWN_NOT_INIT;
+
+        default:
+            Print("WiFi Station", "WiFi backend stop failed for unhandled reason!");
+            return WIFI_SHUTDOWN_UNSAVABLE;
+    }
+
+    disconnection_reason_buffer             = 255;
+    wifi_handles.wifi                       = NULL;
+    wifi_handles.ip                         = NULL;
+
+    /* These are needed but I want them gone...
+    // Not sure if ensuring removal is useful in any way but I'd like too with a redesign of calling this?
+    // - Maybe send this task a callback, and call it here to keep this as the final function in the chain?
+    // - Could potentially store the callback in a stack variable before calling Termination()? Not sure...
+    // Either way; the start method requires callback params and not specifying one would require a NULL assignment anyway.
+    wifi_callbacks.callback                 = NULL;
+    wifi_callbacks.disconnection_handler    = NULL;
+    wifi_callbacks.stop_handler             = NULL;
+    wifi_callbacks.exhaustion_callback      = NULL;
+    wifi_callbacks.bad_config_callback      = NULL;
+    */
+
+    memset(&wifi_ip_data, 0, sizeof(wifi_ip_data));
+    memset(&wifi_client_config, 0, sizeof(wifi_client_config));
+
+    wifi_callbacks.stop_handler();
+
+    return WIFI_SHUTDOWN_OKAY;
+}
+
+void Termination_Handler(void *pvParameters)
+{
+    Print("WiFi Station", "Termination handler task created.");
+    switch(Terminate())
+    {
+        case WIFI_SHUTDOWN_OKAY:
+            Print("WiFi Station", "WiFi shutdown okay.");
+            break;
+
+        case WIFI_SHUTDOWN_NOT_INIT:
+            Print("WiFi Station", "WiFi shutdown failed - WiFi not initialized.");
+            break;
+
+        case WIFI_SHUTDOWN_UNSAVABLE:
+            Print("WiFi Station", "WiFi shutdown failed for unhanlded reason!");
+            break;
+
+        default:
+            Print("WiFi Station", "WiFi shutdown failed for unknown reason...");
+            break;
+    }
+    vTaskDelete(NULL);
 }
 
 void Termination(void)
 {
-    StopWiFiTask();
-    //Callback handlers blah
-    //Stop the background task and dissassemble the class (but using the actual callers etc.)
+    Print("WiFi Station", "Termination request - creating termination handler task to dissociate from any impacted task callees.");
+    xTaskCreate(
+        Termination_Handler,
+        "Termination-Handler",
+        WIFI_TERMINATION_HANDLER_STACK,
+        NULL,
+        tskIDLE_PRIORITY,
+        NULL
+    );
 }

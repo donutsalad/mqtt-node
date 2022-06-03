@@ -22,22 +22,27 @@
 
 static void WiFiConnectedCallback(void)
 {
-    Print("WiFi Connected Callback", "WiFi Connected Callback");
+    Print("WiFi Connected Callback", "WiFi Connected Callback invoked.");
 }
 
 static void WiFiDisconnectedHandler(void)
 {
-    Print("WiFi Disconnected Handler", "WiFi Disconnected Handler");
+    Print("WiFi Disconnected Handler", "WiFi Disconnected Handler starting...");
 }
 
 static void WiFiStopHandler(void)
 {
-    Print("WiFi Stop Handler", "WiFi Stop Handler");
+    Print("WiFi Stop Handler", "WiFi Stop Handler starting...");
 }
 
 static void WiFiExhaustionCallback(void)
 {
-    Print("WiFi Exhaustion Callback", "WiFi Exhaustion Callback");
+    Print("WiFi Exhaustion Callback", "WiFi Exhaustion Callback invoked.");
+}
+
+static void WiFiBadConfigHandler(void)
+{
+    Print("WiFi Bad Config Handler", "WiFi Bad Config Handler starting...");
 }
 
 int start_system(void)
@@ -114,7 +119,8 @@ int start_system(void)
         &WiFiConnectedCallback,
         &WiFiDisconnectedHandler,
         &WiFiStopHandler,
-        &WiFiExhaustionCallback
+        &WiFiExhaustionCallback,
+        &WiFiBadConfigHandler
     )) 
     {
         case WIFI_STARTUP_OKAY:

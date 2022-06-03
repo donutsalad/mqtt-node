@@ -211,8 +211,27 @@ static int start_ap(void)
     }
 }
 
+//TODO: NEED TO DEREGISTER THE HANDLERS!!!
 static int stop_ap(void)
 {
+    switch(esp_event_handler_unregister(
+        WIFI_EVENT, ESP_EVENT_ANY_ID,
+        &ap_event_handler
+    ))
+    {
+        case ESP_OK:
+            Print("AP", "AP event handler unregistered.");
+            break;
+
+        case ESP_ERR_INVALID_ARG:
+            Print("AP", "Invalid combination of event base and event ID?! Please check src or open a github issue!");
+            return AP_IERR_UNSAVABLE;
+
+        default:
+            Print("AP", "AP event handler unregister failed for unknown reason!");
+            return AP_IERR_UNSAVABLE;
+    }
+
     if(wifi_event_group != NULL)
     {
         wifi_event_group = NULL;
