@@ -1,5 +1,4 @@
-#include "restore.h"
-//#include "ap_config.h" occurs in restore.h, avoiding a circular dependency.
+#include "ap_config.h"
 
 #include <stdio.h>
 

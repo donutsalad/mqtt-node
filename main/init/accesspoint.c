@@ -211,7 +211,6 @@ static int start_ap(void)
     }
 }
 
-//TODO: NEED TO DEREGISTER THE HANDLERS!!!
 static int stop_ap(void)
 {
     switch(esp_event_handler_unregister(

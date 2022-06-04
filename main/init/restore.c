@@ -1,5 +1,7 @@
 #include "restore.h"
 
+#include <datatypes.h>
+
 static restore_config_t local_restore_data;
 
 int attempt_restore(void)

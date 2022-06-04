@@ -7,8 +7,8 @@
 #include <esp_event.h>
 
 #include <nvs_init.h>
+#include <ap_config.h>
 #include <restore.h>
-//#include <ap_config.h> ocurrence in restore.h
 #include <wifistation.h>
 
 #define START_SYSTEM_SUCCESS    0
