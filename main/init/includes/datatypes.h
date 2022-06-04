@@ -40,6 +40,19 @@
 #define UPDATE_RESTORE_NVSERR   2
 #define UPDATE_RESTORE_UNKNOWN  3
 
+#define BOOT_FLAG_VALIDATED     0x01
+#define BOOT_FLAG_FAILED        0x02
+#define BOOT_FLAG_BAD_AUTH      0x04
+
+#define BOOT_FLAGS_V_MASK       0b00000111
+
+#define BOOT_STATUS_UNKNOWN     0
+#define BOOT_STATUS_VALIDATED   1
+#define BOOT_STATUS_FALIDATED   2
+#define BOOT_STATUS_CHANGED     3
+#define BOOT_STATUS_FAILED      4
+#define BOOT_STATUS_BAD_WIFI    5
+
 typedef struct WIFI_DETAILS_STRUCTURE {
     char ssid[WIFI_SSID_BUFFER_MAX];
     char pass[WIFI_PASS_BUFFER_MAX];
@@ -55,13 +68,24 @@ typedef struct BOOT_CONFIG_STRUCT {
     int delay;
 } boot_config_t;
 
-//Add flags (Validated, Failed, Bad_Auth)
-// Both above ^ and below v
 typedef struct RESTORE_CONFIG_STRUCTURE {
+    uint8_t flags;
     wifi_connection_details_t wifi_details;
     mqtt_config_t mqtt_config;
     boot_config_t boot_config;
 } restore_config_t;
+
+inline int _boot_details_validated(restore_config_t *config) {
+    return (config->flags & BOOT_FLAG_VALIDATED);
+}
+
+inline int _boot_details_failed(restore_config_t *config) {
+    return (config->flags & BOOT_FLAG_FAILED);
+}
+
+inline int _boot_details_bad_auth(restore_config_t *config) {
+    return (config->flags & BOOT_FLAG_BAD_AUTH);
+}
 
 inline int boot_config_mode_from_string(char *str) {
     if (strcmp(str, BOOT_DETAILS_TAG_FULL) == 0) {
@@ -118,3 +142,4 @@ void set_boot_config_mode(int mode);
 void set_boot_config_delay(int delay);
 
 int update_restore_config(wifi_connection_details_t *wifiDetails, mqtt_config_t *mqttDetails, boot_config_t *bootDetails);
+int get_boot_config_status(void);

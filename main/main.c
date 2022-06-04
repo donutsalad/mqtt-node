@@ -23,6 +23,25 @@
 static void WiFiConnectedCallback(void)
 {
     Print("WiFi Connected Callback", "WiFi Connected Callback invoked.");
+    if(using_restoration_data() == RESTORATION_USING)
+    {
+        Print("WiFi Connected Callback", "Restoration is used; validating stored configuration...");
+        switch(validate_restore_data())
+        {
+            case FLAGS_SET_UNCHANGED:
+                Print("WiFi Connected Callback", "Restoration data already validated! Ignoring...");
+                break;
+
+            case FLAGS_SET_SINGLE:
+            case FLAGS_SET_TWEAKED:
+                Print("WiFi Connected Callback", "Restoration data validated!");
+                break;
+            
+            case FLAGS_SET_UNHANDLED:
+                Print("WiFi Connected Callback", "Warning: Unable to set flags upon attempting restore data validation... If issue persists please check src or open an issue on github!");
+                break;
+        }
+    }
 }
 
 static void WiFiDisconnectedHandler(void)
@@ -38,11 +57,49 @@ static void WiFiStopHandler(void)
 static void WiFiExhaustionCallback(void)
 {
     Print("WiFi Exhaustion Callback", "WiFi Exhaustion Callback invoked.");
+    if(using_restoration_data() == RESTORATION_USING)
+    {
+        Print("WiFi Exhaustion Callback", "Restoration is used; failing currently stored configuration...");
+        switch(failed_with_config())
+        {
+            case FLAGS_SET_UNCHANGED:
+                Print("WiFi Exhaustion Callback", "Restoration data has already failed! Ignoring...");
+                break;
+
+            case FLAGS_SET_SINGLE:
+            case FLAGS_SET_TWEAKED:
+                Print("WiFi Exhaustion Callback", "Restoration data marked as failed!");
+                break;
+            
+            case FLAGS_SET_UNHANDLED:
+                Print("WiFi Exhaustion Callback", "Warning: Unable to set flags upon attempting restore data failure marking... If issue persists please check src or open an issue on github!");
+                break;
+        }
+    }
 }
 
 static void WiFiBadConfigHandler(void)
 {
     Print("WiFi Bad Config Handler", "WiFi Bad Config Handler starting...");
+    if(using_restoration_data() == RESTORATION_USING)
+    {
+        Print("WiFi Bad Config Handler", "Restoration is used; invalidating currently stored configuration...");
+        switch(bad_auth_from_config())
+        {
+            case FLAGS_SET_UNCHANGED:
+                Print("WiFi Bad Config Handler", "Restoration data already set as invalid! Unsure how we retried with it then; if this continuously happens please check the src or open a github issue!");
+                break;
+
+            case FLAGS_SET_SINGLE:
+            case FLAGS_SET_TWEAKED:
+                Print("WiFi Bad Config Handler", "Restoration data marked as invalid!");
+                break;
+            
+            case FLAGS_SET_UNHANDLED:
+                Print("WiFi Bad Config Handler", "Warning: Unable to set flags upon attempting restore data invalidation... If issue persists please check src or open an issue on github!");
+                break;
+        }
+    }
 }
 
 int start_system(void)
