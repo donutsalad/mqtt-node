@@ -581,7 +581,7 @@ static const char* get_mqtt_set_page() { return mqtt_set_ok_page; }
 //Is calloc a better option here?
 //We could free immediately after served. 
 //const char* boot_buffer = boot_set_ok_page();
-static char rendered_boot_page[1024];
+static char rendered_boot_page[1536];
 
 static const char* confirmation_page_boot_template = WIFI_CONFIG_HTML_DONE_CONFIRM;
 static const char* confirmation_page_save_template = WIFI_CONFIG_HTML_SAVE_CONFIRM;
@@ -622,7 +622,7 @@ static const char* render_page(render_page_id_t page_id)
     else if(format >= sizeof(rendered_boot_page))
     {
         Print("Webserver", "Confirmation page is too big!");
-        return "BUFFER OVERFLOW ERROR";
+        return "BUFFER OVERFLOW ERROR IN PAGE RENDER";
     }
 
     xEventGroupSetBits(
@@ -937,7 +937,7 @@ static int destroy_webserver(httpd_handle_t* server)
 {
     int resultant = SERVER_IGNORE;
 
-    if (server)
+    if (*server)
     {
         switch(httpd_stop(*server))
         {
@@ -953,7 +953,7 @@ static int destroy_webserver(httpd_handle_t* server)
                 Print("Webserver", "Unhandled error while stopping webserver! Aborting...");
                 return SERVER_FATAL;
         }
-        server = NULL;
+        *server = NULL;
         resultant = SERVER_OK;
     }
 

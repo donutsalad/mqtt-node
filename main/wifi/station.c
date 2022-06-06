@@ -13,6 +13,14 @@
 
 #include "ap_config.h"
 
+#define CALLBACK_STACK_SIZE                     2048
+
+#define CALLBACK_CODE_CALLBACK                  1
+#define CALLBACK_CODE_DISCONNECTION_HANDLER     2
+#define CALLBACK_CODE_STOP_HANDLER              3
+#define CALLBACK_CODE_EXHAUSTION_CALLBACK       4
+#define CALLBACK_CODE_BAD_CONFIG_CALLBACK       5
+
 static esp_netif_t *sta_netif = NULL;
 static EventGroupHandle_t wifi_event_group = NULL;
 
@@ -61,6 +69,66 @@ static inline void _generate_wifi_client_configuration(void) {
 
     memcpy(wifi_client_config.sta.ssid,     wifi_details()->ssid, sizeof(wifi_client_config.sta.ssid));
     memcpy(wifi_client_config.sta.password, wifi_details()->pass, sizeof(wifi_client_config.sta.password));
+}
+
+static inline void _callback_task_encasement(void* pvParameters)
+{
+    if(pvParameters == NULL)
+    {
+        Print("Callback Wrapper", "Callback task encasement received NULL function pointer! Error within station.c!!");
+        vTaskDelete(NULL);
+        return; // We shouldn't make it to this point but I don't like the look of leaving this out :P
+    }
+
+    //Simplified so you can pass the callback pointer instead of a pointer thereof - since the callback list get wiped during callbacks sometimes.
+    ((void (*)(void))pvParameters)();
+    vTaskDelete(NULL);
+}
+
+static void _callback_wrapper(int callback_code)
+{
+    void (*function)(void) = NULL;
+    switch(callback_code)
+    {
+		case CALLBACK_CODE_CALLBACK:
+			function = wifi_callbacks.callback;
+			break;
+
+		case CALLBACK_CODE_DISCONNECTION_HANDLER:
+			function = wifi_callbacks.disconnection_handler;
+			break;
+
+		case CALLBACK_CODE_STOP_HANDLER:
+			function = wifi_callbacks.stop_handler;
+			break;
+
+		case CALLBACK_CODE_EXHAUSTION_CALLBACK:
+			function = wifi_callbacks.exhaustion_callback;
+			break;
+
+		case CALLBACK_CODE_BAD_CONFIG_CALLBACK:
+			function = wifi_callbacks.bad_config_callback;
+			break;
+
+        default: 
+            Print("Callback Wrapper", "Callback wrapper received unknown callback code! Error within station.c!!");
+            return;
+    }
+
+    if(function == NULL)
+    {
+        Print("Callback Wrapper", "Selected callback was NULL - ignoring.");
+        return;
+    }
+
+    xTaskCreate(
+        _callback_task_encasement,
+        "CallbackWrapper",          //As long as xTaskGetHandle() isn't used, sharing a name is fine.
+        CALLBACK_STACK_SIZE,
+        function,
+        tskIDLE_PRIORITY,
+        NULL
+    );
 }
 
 static void ClearData(void)
@@ -144,16 +212,20 @@ int DisconnectionEntailment(void)
         case WIFI_DISCONNECTION_INVALID_RSN_IE_CAP:
         case WIFI_DISCONNECTION_802_1X_AUTH_FAILED:
         case WIFI_DISCONNECTION_CIPHER_SUITE_REJECTED:
+        case WIFI_DISCONNECTION_BSS_TRANSITION_DISASSOC:
 
             return DISCONNECT_RESPONCE_RETRY;
 
+        case WIFI_DISCONNECTION_ROAMING:
+        case WIFI_DISCONNECTION_AP_TSF_RESET:
         case WIFI_DISCONNECTION_BEACON_TIMEOUT:
         case WIFI_DISCONNECTION_ASSOC_FAIL:
         case WIFI_DISCONNECTION_HANDSHAKE_TIMEOUT:
 
             return DISCONNECT_RESPONCE_RETRYWAIT;
 
-
+        case WIFI_DISCONNECTION_CONNECTION_FAIL:
+        case WIFI_DISCONNECTION_INVALID_PMKID:
         case WIFI_DISCONNECTION_AUTH_FAIL:
             return DISCONNECT_RESPONCE_REJECT;
 
@@ -416,7 +488,7 @@ void Reject(void)
 {
     Print("WiFi Station", "Authentication failed. Setup configuration should be rejected - executing bad config callback.");
     Termination();
-    wifi_callbacks.bad_config_callback();
+    _callback_wrapper(CALLBACK_CODE_BAD_CONFIG_CALLBACK);
 }
 
 //Can't find etc..
@@ -424,7 +496,7 @@ void Exhaustion(void)
 {
     Print("WiFi Station", "Exhaustion. Setup configuration might be invalid - executing exhaustion callback.");
     Termination();
-    wifi_callbacks.exhaustion_callback();
+    _callback_wrapper(CALLBACK_CODE_EXHAUSTION_CALLBACK);
 }
 
 //Beacon time outs etc - so not invalid but failure nonetheless.
@@ -432,7 +504,7 @@ void InnocentExhaustion(void)
 {
     Print("WiFi Station", "Innocent exhaustion. Setup configuration could be invalid - executing exhaustion callback.");
     Termination();
-    wifi_callbacks.exhaustion_callback();
+    _callback_wrapper(CALLBACK_CODE_EXHAUSTION_CALLBACK);
 }
 
 //Unhandled error so not really something we wanna try again just in case.
@@ -440,20 +512,20 @@ void UnknownExhaustion(void)
 {
     Print("WiFi Station", "Unhandled exhaustion. Setup configuration might be invalid, not sure - executing bad config callback to be safe.");
     Termination();
-    wifi_callbacks.bad_config_callback();
+    _callback_wrapper(CALLBACK_CODE_BAD_CONFIG_CALLBACK);
 }
 
 
 void Connected(void)
 {
     Print("WiFi Station", "Connected to AP.");
-    wifi_callbacks.callback();
+    _callback_wrapper(CALLBACK_CODE_CALLBACK);
 }
 
 void Disconnected(void)
 {
     Print("WiFi Station", "Disconnected from AP.");
-    wifi_callbacks.disconnection_handler();
+    _callback_wrapper(CALLBACK_CODE_DISCONNECTION_HANDLER);
 }
 
 void InvalidDuality(void)
@@ -550,11 +622,12 @@ int Terminate(void)
     memset(&wifi_ip_data, 0, sizeof(wifi_ip_data));
     memset(&wifi_client_config, 0, sizeof(wifi_client_config));
 
-    wifi_callbacks.stop_handler();
+    _callback_wrapper(CALLBACK_CODE_STOP_HANDLER);
 
     return WIFI_SHUTDOWN_OKAY;
 }
 
+static TaskHandle_t xTerminationHandle;
 void Termination_Handler(void *pvParameters)
 {
     Print("WiFi Station", "Termination handler task created.");
@@ -576,11 +649,20 @@ void Termination_Handler(void *pvParameters)
             Print("WiFi Station", "WiFi shutdown failed for unknown reason...");
             break;
     }
+
+    xTerminationHandle = NULL;
     vTaskDelete(NULL);
-}
+}   //Should the kill task be a seperate function such that it can be killed elsewhere? I don't think so?
 
 void Termination(void)
 {
+    if(xTerminationHandle != NULL)
+    {
+        Print("WiFi Station", "Termination handler task already running.");
+        Print("WiFi Station", "Request ignored...");
+        return;
+    }
+
     Print("WiFi Station", "Termination request - creating termination handler task to dissociate from any impacted task callees.");
     xTaskCreate(
         Termination_Handler,
@@ -588,6 +670,6 @@ void Termination(void)
         WIFI_TERMINATION_HANDLER_STACK,
         NULL,
         tskIDLE_PRIORITY,
-        NULL
+        &xTerminationHandle
     );
 }

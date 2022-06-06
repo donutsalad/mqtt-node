@@ -215,6 +215,12 @@ void StopWiFiTask(void)
         return;
     }
     vTaskDelete(xWiFiHandle);
+
+	innocent_retry_count = 0;
+	exhausation_counter  = 0;
+	unknown_counter      = 0;
+
+	connectionvalid      = 0;
     Print("WiFi Task Terminator", "WiFi Task terminated.");
     xWiFiHandle = NULL;
 }

@@ -80,6 +80,7 @@ static int start_ap(void)
     ap_netif = esp_netif_create_default_wifi_ap();
     if(ap_netif != NULL)
     {
+        Print("AP", "Initialising AP netif");
         wifi_init_config_t init_config = WIFI_INIT_CONFIG_DEFAULT();
         switch(esp_wifi_init(&init_config))
         {
@@ -238,6 +239,7 @@ static int stop_ap(void)
 
     if(ap_netif != NULL)
     {
+        Print("AP", "Destroying AP netif");
         esp_netif_destroy(ap_netif);
         ap_netif = NULL;
     }

@@ -81,7 +81,6 @@ static int _transfer_nvs_to_local_restore_data(void) {
     }
 
     nvs_close(nvs);
-
     return ATTEMPT_RESTORE_OK;
 }
 
@@ -390,7 +389,7 @@ static int _reject_auth_and_update_stored_restore_data(void) {
     }
 
     //Set both the failed flag and the bad auth flag - since it's implicit we failed if we have bad auth.
-    local_restore_data.flags |= (BOOT_FLAG_FAILED & BOOT_FLAG_BAD_AUTH);
+    local_restore_data.flags |= (BOOT_FLAG_FAILED | BOOT_FLAG_BAD_AUTH);
     
     switch(_transfer_local_restore_data_to_nvs(nvs))
     {
@@ -614,10 +613,12 @@ int failed_with_config(void)
 
         default:
             Print("Config Restoration", "Unknown error from within the same src file!!! Please check src and/or open a github issue!");
-            return ATTEMPT_RESTORE_UNKNOWN;
+            return ATTEMPT_RESTORE_UNKNOWN; //Bad
     }
 
     int buffer = -1;
+    
+    //Why are we theoretically getting to this point and stopping...?
 
     //Figure out if we have to do something, debug log what case, store the result or return early.
     switch(get_boot_config_status())
@@ -732,7 +733,7 @@ int bad_auth_from_config(void)
     switch(_reject_auth_and_update_stored_restore_data())
     {
         case ATTEMPT_RESTORE_OK:
-            Print("Config Restoration", "Config validated.");
+            Print("Config Restoration", "Config invalidated.");
             break;
 
         case ATTEMPT_RESTORE_NONE:

@@ -20,6 +20,159 @@
 #define GET_CONFIG_REBOOT_NOW   3
 #define GET_CONFIG_FAILURE      4
 
+#define REPROMPT_STACK_SIZE     3072
+
+#define REPROMPT_SUCCESS        0
+#define REPROMPT_FAILURE        1
+#define REPROMPT_START_FAILURE  2
+
+#define REPROMPT_TASK_CREATED   0
+#define REPROMPT_TASK_EXISTS    1
+#define REPROMPT_TASK_ERROR     2
+#define REPROMPT_TASK_NOMEM     3
+
+#define REPROMPT_STOP_SUCCESS   0
+#define REPROMPT_STOP_FAILURE   1
+#define REPROMPT_STOP_NONE      2
+
+int aquire_config(void);
+int start_system(void);
+
+static inline int _reprompt_user(void)
+{
+    Print("System", "Reprompting the user for configuration details!");
+    switch(aquire_config())
+    {
+        case GET_CONFIG_SUCCESS: 
+            Print("System", "Config acquisition successful!");
+            Print("System", "Attempting to boot with new config...");
+            break;
+
+        case GET_CONFIG_FAILURE: 
+        case GET_CONFIG_NVS_FALIURE: 
+            Print("System", "Config acquisition failed!");
+            return REPROMPT_FAILURE;
+
+        case GET_CONFIG_REBOOT_NOW: 
+            Print("System", "Config acquisition failed!");
+            Print("System", "Acquisition let us know failure could potentially be resolved with a reboot.");
+            Print("System", "Rebooting...");
+            esp_restart(); 
+            return REPROMPT_FAILURE; //We shouldn't get here x3
+
+        //WIFI here because it's unused.
+        case GET_CONFIG_WIFI_FAILURE:
+        default: 
+            Print("System", "Config acquisition failed for unknown reason!");
+            return REPROMPT_FAILURE;
+    }
+
+    Print("System", "Attempting to relaunch the system!");
+    switch(start_system())
+    {
+        case START_SYSTEM_SUCCESS:
+            Print("System", "Startup successful!");
+            return REPROMPT_SUCCESS;
+
+        case START_SYSTEM_FAILURE: 
+            Print("System", "Startup failed!");
+            return REPROMPT_START_FAILURE;
+        
+        default: 
+            Print("System", "Unhandled error. Falling out of startup routine dirtily...");
+            return REPROMPT_START_FAILURE;
+    }
+}
+
+static TaskHandle_t _reprompt_task_handle;
+static void Reprompt_Task(void* pvParameters)
+{
+    //Not always but in this case;
+    RECURSION_IS_BAD:
+    switch(_reprompt_user())
+    {
+        case REPROMPT_SUCCESS:
+            Print("System", "Reprompting user successful!");
+            Print("System", "Exiting reprompt task...");
+            break;
+
+        //TODO: Implement a maximum retry counter on this case.
+        case REPROMPT_FAILURE:
+            Print("System", "Reprompting user failed!");
+            Print("System", "Attempting to reprompt the user again...");
+            goto RECURSION_IS_BAD; // - Because it increments the stack pointer! [goto] is clean code! Fight me!
+
+        case REPROMPT_START_FAILURE:
+            Print("System", "Starting after reprompt failed!");
+            Print("System", "Attempting to reprompt the user again, it could've been an issue with the configuration...");
+            goto RECURSION_IS_BAD; // - When we only have a few kilobytes for our entire task!
+
+        default:
+            Print("System", "Unhandled error. Exiting reprompt task...");
+            Print("System", "This error message shouldn't occur! Please check the src or submit an issue on github!");
+            break;
+    }
+
+    _reprompt_task_handle = NULL;
+    vTaskDelete(NULL);
+}
+
+static int LaunchRepromptTask(void)
+{
+    Print("System", "Request for reprompt task launch received!");
+
+    if(_reprompt_task_handle != NULL)
+    {
+        Print("System", "Reprompt task already exists!");
+        Print("System", "Ignoring request to remprompt user - unsure how duplicate requests formed! Please check src or open a github issue!");
+        return REPROMPT_TASK_EXISTS;
+    }
+
+    Print("System", "Creating reprompt task...");
+    BaseType_t result = xTaskCreate(
+        Reprompt_Task,
+        "Reprompt-User",
+        REPROMPT_STACK_SIZE,
+        NULL,
+        tskIDLE_PRIORITY,
+        &_reprompt_task_handle
+    );
+
+    switch(result)
+    {
+        case pdPASS:
+            Print("System", "Reprompt task created successfully!");
+            return REPROMPT_TASK_CREATED;
+
+        case errCOULD_NOT_ALLOCATE_REQUIRED_MEMORY:
+            Print("System", "Reprompt task creation failed!");
+            Print("System", "Could not allocate memory for reprompt task!");
+            return REPROMPT_TASK_NOMEM;
+
+        default:
+            Print("System", "Reprompt task creation failed!");
+            return REPROMPT_TASK_ERROR;
+    }
+}
+
+static int KillRepromptTask(void)
+{
+    Print("System", "Request for reprompt task kill received!");
+    if(_reprompt_task_handle == NULL)
+    {
+        Print("System", "Reprompt task does not exist!");
+        return REPROMPT_STOP_NONE;
+    }
+
+    //TODO: Gracefully stop WiFi stack and any consequential processes that might be unclean during exit.
+
+    Print("System", "Killing reprompt task...");
+    vTaskDelete(_reprompt_task_handle);
+    Print("System", "Remprompt task killed successfully!");
+    _reprompt_task_handle = NULL;
+    return REPROMPT_STOP_SUCCESS;
+}
+
 static void WiFiConnectedCallback(void)
 {
     Print("WiFi Connected Callback", "WiFi Connected Callback invoked.");
@@ -42,6 +195,8 @@ static void WiFiConnectedCallback(void)
                 break;
         }
     }
+
+    Print("WiFi Connected Callback", "This is as far as the connection code can get us. Next up MQTT!!!");
 }
 
 static void WiFiDisconnectedHandler(void)
@@ -74,7 +229,31 @@ static void WiFiExhaustionCallback(void)
             case FLAGS_SET_UNHANDLED:
                 Print("WiFi Exhaustion Callback", "Warning: Unable to set flags upon attempting restore data failure marking... If issue persists please check src or open an issue on github!");
                 break;
+
+            default:
+                Print("WiFi Exhaustion Callback", "Warning: Unhandled error occurred while attempting to mark restoration data as failed! If issue persists please check src or open an issue on github!");
+                break;
         }
+    }
+
+    Print("WiFi Exhaustion Callback", "Since we can't seem to connect to the WiFi network, we're going to try to reprompt the user and try again.");
+    switch(LaunchRepromptTask())
+    {
+        case REPROMPT_TASK_CREATED:
+            Print("WiFi Exhaustion Callback", "Reprompt task created successfully!");
+            break;
+
+        case REPROMPT_TASK_NOMEM:
+            Print("WiFi Exhaustion Callback", "Reprompt task creation failed!");
+            Print("WiFi Exhaustion Callback", "Could not allocate memory for reprompt task!");
+            break;
+
+        case REPROMPT_TASK_ERROR:
+        case REPROMPT_TASK_EXISTS:
+        default:
+            Print("WiFi Exhaustion Callback", "Reprompt task creation failed!");
+            Print("WiFi Exhaustion Callback", "Unhandled error occurred while creating reprompt task!");
+            break;
     }
 }
 
@@ -99,6 +278,26 @@ static void WiFiBadConfigHandler(void)
                 Print("WiFi Bad Config Handler", "Warning: Unable to set flags upon attempting restore data invalidation... If issue persists please check src or open an issue on github!");
                 break;
         }
+    }
+
+    Print("WiFi Bad Config Handler", "Since the network details were invalid, we're going to try to reprompt the user and try again.");
+    switch(LaunchRepromptTask())
+    {
+        case REPROMPT_TASK_CREATED:
+            Print("WiFi Bad Config Handler", "Reprompt task created successfully!");
+            break;
+
+        case REPROMPT_TASK_NOMEM:
+            Print("WiFi Bad Config Handler", "Reprompt task creation failed!");
+            Print("WiFi Bad Config Handler", "Could not allocate memory for reprompt task!");
+            break;
+
+        case REPROMPT_TASK_ERROR:
+        case REPROMPT_TASK_EXISTS:
+        default:
+            Print("WiFi Bad Config Handler", "Reprompt task creation failed!");
+            Print("WiFi Bad Config Handler", "Unhandled error occurred while creating reprompt task!");
+            break;
     }
 }
 
@@ -369,6 +568,16 @@ void app_main(void)
         case ATTEMPT_RESTORE_NVSERR:
             Print("System", "NVS error during restore");
             Print("System", "Unable to restore config from NVS, assuming no valid data present.");
+            goto NO_CONFIG;
+
+        case ATTEMPT_RESTORE_NEW_WIFI:
+            Print("System", "Even though the configuration was validated in the past, the WiFi credentials have changed.");
+            Print("System", "Treating as though no config was present.");
+            goto NO_CONFIG;
+
+        case ATTEMPT_RESTORE_BAD_WIFI:
+            Print("System", "The WiFi credentials are invalid.");
+            Print("System", "Treating as though no config was present.");
             goto NO_CONFIG;
 
         default:
