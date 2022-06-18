@@ -67,10 +67,13 @@ static inline void _generate_wifi_client_configuration(void) {
     memset(wifi_client_config.sta.ssid,     '\0', sizeof(wifi_client_config.sta.ssid));
     memset(wifi_client_config.sta.password, '\0', sizeof(wifi_client_config.sta.password));
 
+    //TODO: Make this safe.
     memcpy(wifi_client_config.sta.ssid,     wifi_details()->ssid, sizeof(wifi_client_config.sta.ssid));
     memcpy(wifi_client_config.sta.password, wifi_details()->pass, sizeof(wifi_client_config.sta.password));
 }
 
+//A bit of a brute force approach.
+//Perhaps some refactoring would be helpful - works though xP
 static inline void _callback_task_encasement(void* pvParameters)
 {
     if(pvParameters == NULL)
@@ -134,6 +137,7 @@ static void _callback_wrapper(int callback_code)
 static void ClearData(void)
 {
     vEventGroupDelete(wifi_event_group);
+    wifi_event_group = NULL;
     esp_netif_destroy(sta_netif);
 }
 
@@ -163,6 +167,7 @@ static void _wifi_event_handler(
     }
 }
 
+//TODO: Link Callbacks for IP events.
 static void _ip_event_handler(
     void* arg, esp_event_base_t event_base,
     int32_t event_id, void* event_data
@@ -176,11 +181,13 @@ static void _ip_event_handler(
             memcpy(&wifi_ip_data.netmask,   &((ip_event_got_ip_t*)event_data)->ip_info.netmask, sizeof(wifi_ip_data.netmask));
             memcpy(&wifi_ip_data.gateway,   &((ip_event_got_ip_t*)event_data)->ip_info.gw,      sizeof(wifi_ip_data.gateway));
             xEventGroupSetBits(wifi_event_group, WIFI_STATION_HAS_IP);
+            xEventGroupClearBits(wifi_event_group, WIFI_STATION_LOST_IP);
             break;
 
         case IP_EVENT_STA_LOST_IP:
             memset(&wifi_ip_data, 0, sizeof(wifi_ip_data));
             xEventGroupSetBits(wifi_event_group, WIFI_STATION_LOST_IP);
+            xEventGroupClearBits(wifi_event_group, WIFI_STATION_HAS_IP);
             break;
     }
 }
@@ -579,6 +586,7 @@ int Terminate(void)
 
     if(wifi_event_group != NULL)
     {
+        vEventGroupDelete(wifi_event_group);
         wifi_event_group = NULL;
     }
 
@@ -627,7 +635,7 @@ int Terminate(void)
     return WIFI_SHUTDOWN_OKAY;
 }
 
-static TaskHandle_t xTerminationHandle;
+static TaskHandle_t xTerminationHandle = NULL;
 void Termination_Handler(void *pvParameters)
 {
     Print("WiFi Station", "Termination handler task created.");

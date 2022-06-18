@@ -10,6 +10,7 @@
 #include <ap_config.h>
 #include <restore.h>
 #include <wifistation.h>
+#include <mqttclient.h>
 
 #define START_SYSTEM_SUCCESS    0
 #define START_SYSTEM_FAILURE    1
@@ -84,6 +85,7 @@ static inline int _reprompt_user(void)
     }
 }
 
+//TODO: Maximum retries before booting.
 static TaskHandle_t _reprompt_task_handle;
 static void Reprompt_Task(void* pvParameters)
 {
@@ -196,7 +198,10 @@ static void WiFiConnectedCallback(void)
         }
     }
 
-    Print("WiFi Connected Callback", "This is as far as the connection code can get us. Next up MQTT!!!");
+    //Print("WiFi Connected Callback", "This is as far as the connection code can get us. Next up MQTT!!!");
+
+    Print("WiFi Connected Callback", "DEBUG: LAUNCHING CALLBACKLESS MQTT BOILERPLATE");
+    StartMQTTClient(NULL, NULL, NULL);
 }
 
 static void WiFiDisconnectedHandler(void)
@@ -371,6 +376,7 @@ int start_system(void)
 
     fflush(stdout);
 
+    //TODO: We're failing here for some reason!?!?!
     switch(StartWiFiStation(
         &WiFiConnectedCallback,
         &WiFiDisconnectedHandler,

@@ -82,7 +82,13 @@
 #define RETRY_MAX_EXHAUSTED 5
 #define RETRY_MAX_UNKNOWN   5
 
-int StartWiFiStation(void (*callback)(void), void (*disconnection_handler)(void), void (*stop_handler)(void), void (*exhaustion_callback)(void), void (*bad_config_callback)(void));
+int StartWiFiStation(
+    void (*callback)(void), 
+    void (*disconnection_handler)(void), 
+    void (*stop_handler)(void), 
+    void (*exhaustion_callback)(void), 
+    void (*bad_config_callback)(void)
+);
 
 int StartWiFiTask(void);
 void StopWiFiTask(void);

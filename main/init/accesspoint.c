@@ -234,6 +234,7 @@ static int stop_ap(void)
 
     if(wifi_event_group != NULL)
     {
+        vEventGroupDelete(wifi_event_group);
         wifi_event_group = NULL;
     }
 
