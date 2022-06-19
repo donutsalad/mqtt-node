@@ -4,3 +4,6 @@ sdkconfig.old
 html/bin
 html/obj
 html/includes
+hash/bin
+hash/obj
+hash/includes

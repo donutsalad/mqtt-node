@@ -1,6 +1,7 @@
 #include <freertos/FreeRTOS.h>
 
 #include <logging.h>
+#include <pchashes.h>
 
 #define BIT31   0x80000000
 #define BIT30   0x40000000
@@ -24,13 +25,19 @@
 #define BIT12   0x00001000
 #define BIT11   0x00000800
 #define BIT10   0x00000400
-#define BIT9     0x00000200
-#define BIT8     0x00000100
-#define BIT7     0x00000080
-#define BIT6     0x00000040
-#define BIT5     0x00000020
-#define BIT4     0x00000010
-#define BIT3     0x00000008
-#define BIT2     0x00000004
-#define BIT1     0x00000002
-#define BIT0     0x00000001
+#define BIT9    0x00000200
+#define BIT8    0x00000100
+#define BIT7    0x00000080
+#define BIT6    0x00000040
+#define BIT5    0x00000020
+#define BIT4    0x00000010
+#define BIT3    0x00000008
+#define BIT2    0x00000004
+#define BIT1    0x00000002
+#define BIT0    0x00000001
+
+//Admire my beautiful naming x3
+#define strwitch(x) switch(djb_hash(x))
+#define charse(x) case PCHASH_ ## x
+
+size_t djb_hash(const char *str);
