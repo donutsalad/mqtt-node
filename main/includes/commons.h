@@ -40,4 +40,7 @@
 #define strwitch(x) switch(djb_hash(x))
 #define charse(x) case PCHASH_ ## x
 
-size_t djb_hash(const char *str);
+typedef unsigned int hash_t;
+
+hash_t djb_hash(const char* str);
+const char* djb_hash_toslash(const char* str, hash_t *hash);

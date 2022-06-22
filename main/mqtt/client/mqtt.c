@@ -55,12 +55,23 @@ static inline EventBits_t _blockfor_lostip(void) {
 static TaskHandle_t xInvalidationTask = NULL;
 static void Invalidation_Task(void *pvParameters)
 {
-    
+    //Check if the PCTASK_CALL flag is set
+        //If it has been set and the done flag is set, we need to terminate the entire stack.
+        //Otherwise block until it's done and do the same.
+    //Else
+        //Set the terminating flag
+        //Call cleanup ourselves
+
+    //Invalidate the stored details
+    //Call the callback routine
+    //Kill self
 }
 
 static void InvalidateMQTTConfiguration(void)
 {
-
+    //Check to see if we're already running the invalidation task
+        //Clear the service ready flag
+        //Start the invalidation task
 }
 
 static TaskHandle_t xPostConnectionTask = NULL;
@@ -111,7 +122,8 @@ static void ConnectionLost(void)
         Print("MQTT Client", "Maximum reconnection attempts exceeded!");
         Print("MQTT Client", "Terminating MQTT Service.");
 
-        //TODO: Actually shutdown properly.
+        //TODO-Passed along: Actually shutdown properly.
+        //InvalidateMQTTConfiguration(); //Incomplete function.
         Print("MQTT Client", "TERMPORARILY RESTARTING AT THIS POINT.");
         esp_restart();
     }
@@ -301,7 +313,7 @@ static void Termination_Handler(void *pvParameters)
     //Set Terminating flag
     //Check to see if we're connected.
     //Check to see if we've called the PC task before.
-    //If we have, destroy app services downstream.
+        //If we have, destroy app services downstream.
     //Shutdown MQTT client - any connection attempts should be blocked by the termination flag.
     //Cleanup
     //Kill self.
