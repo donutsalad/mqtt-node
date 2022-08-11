@@ -12,15 +12,18 @@
 #define MQTT_MAX_RECON_ATTEMPTS 4
 
 #define MQTT_START_STACK_SIZE   4096
+#define MQTT_STOP_STACK_SIZE    2048
+#define MQTT_INVALID_STACK_SIZE 2048
+#define MQTT_PC_TASK_STACK_SIZE 4096
 
 #define MQTT_START_SUCCESS      0
 #define MQTT_START_DUPLICATE    1
 #define MQTT_START_FAILURE      2
 
-#define MQTT_EVENT_SERVICE_RDY  BIT0
-#define MQTT_EVENT_PCTASK_CALL  BIT1
-#define MQTT_EVENT_PCTASK_DONE  BIT2
-#define MQTT_EVENT_TERMINATING  BIT3
+#define MQTT_EVENT_SERVICE_RDY  BIT0    //MQTT Server Connection Established
+#define MQTT_EVENT_PCTASK_CALL  BIT1    //Started initialising appstack
+#define MQTT_EVENT_PCTASK_DONE  BIT2    //Finished initialising appstack
+#define MQTT_EVENT_TERMINATING  BIT3    //MQTT Services Shutdown in progress
 
 EventGroupHandle_t get_mqtt_event_group(void);
 
@@ -29,3 +32,5 @@ int StartMQTTClient(
     void (*unsuccessful)(void),
     void (*ungraceful_shutdown)(void)
 );
+
+void ShutdownMQTTServices(void);
