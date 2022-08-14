@@ -212,6 +212,7 @@ static void WiFiDisconnectedHandler(void)
 static void WiFiStopHandler(void)
 {
     Print("WiFi Stop Handler", "WiFi Stop Handler starting...");
+    ShutdownMQTTServices();
 }
 
 static void WiFiExhaustionCallback(void)

@@ -20,7 +20,15 @@
         "string": "c",
         "string_view": "c",
         "*.ipp": "c",
-        "*.inc": "c"
+        "*.inc": "c",
+        "*.tcc": "cpp",
+        "numeric": "cpp",
+        "fstream": "cpp",
+        "iostream": "cpp",
+        "istream": "cpp",
+        "ostream": "cpp",
+        "system_error": "cpp",
+        "typeinfo": "cpp"
     },
     "idf.flashType": "UART"
 }

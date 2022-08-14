@@ -1,2 +1,2 @@
 idf_component_register(SRC_DIRS "." "init" "wifi" "mqtt" "mqtt/client" "mqtt/interface" "apps" "apps/core" "apps/polls" "apps/lib" "apps/interface"
-                    INCLUDE_DIRS "." "includes" "init/includes" "wifi/includes" "mqtt/includes" "apps/includes" "apps/lib/includes")
+                    INCLUDE_DIRS "." "includes" "init/includes" "wifi/includes" "mqtt/includes" "apps" "apps/includes" "apps/lib/includes")

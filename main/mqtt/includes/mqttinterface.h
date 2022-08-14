@@ -10,7 +10,7 @@ typedef struct MQTTIncomingData_Parsed {
     char stem[16];
 
     hash_t data_tag;
-    char data[256];
+    char data[256]; //Need to bring these magic numbers out
 } mqtt_request_t;
 
 typedef struct MQTTOutgoingData {

@@ -11,12 +11,16 @@ public static class Configuration
 
         return hash;
     }
+
+    //Currently doesn't work with spaces thanks to the headerfile! Need to sub _ for ' ' when printing to .h
     public static List<string> precomputeTargets = new List<string>
     {
         "cmd",
         "sys",
         "app",
         "poll",
-        "control"
+        "control",
+
+        "HelloWorld"
     };
 }
