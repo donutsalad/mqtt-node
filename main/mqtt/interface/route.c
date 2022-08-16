@@ -17,12 +17,16 @@ typedef struct BUFFER_WRAPPER_OUGOING {
 } _outgoing_t;
 
 
+//Could potentially eventually use xCreateQueueStatic to fully wrap in queues.
+//Depends on wether or not post-queue-recieve buffer usage is commonplace
+// - Deep copying would take up cycles saved by dequeuing a pointer and freeing the data later
+
 _incoming_t _incoming_messages_buffer[MQTT_INCOMING_REQUEST_QUEUE_LENGTH];
 _outgoing_t _outgoing_messages_buffer[MQTT_OUTGOING_DATA_QUEUE_LENGTH];
 
 //Tries to get a ZERO'd buffer from the list, otherwise zero's out a free entry and returns it
 //Returns NULL when there are no free entries
-mqtt_request_t *GetIncomingBufferBlock()
+mqtt_request_t* GetIncomingBufferBlock()
 {
     int free_idx = -1;
     for(int i = 0; i < MQTT_INCOMING_REQUEST_QUEUE_LENGTH; i++)
@@ -50,7 +54,7 @@ mqtt_request_t *GetIncomingBufferBlock()
 
 //Pushes responsibility of freeing buffer block to cleanup task or future caller (when no zero entries found)
 //Only use this when the caller is timepoor.
-void FreeIncomingBufferBlock(mqtt_request_t *buffer)
+void FreeIncomingBufferBlock(mqtt_request_t* buffer)
 {
     for(int i = 0; i < MQTT_INCOMING_REQUEST_QUEUE_LENGTH; i++)
     {
@@ -64,7 +68,7 @@ void FreeIncomingBufferBlock(mqtt_request_t *buffer)
 
 //Zero's out the buffer and free's it
 //If time is of the essence you use FreeIncomingBufferBlock instead.
-void ZeroIncomingBufferBlock(mqtt_request_t *buffer)
+void ZeroIncomingBufferBlock(mqtt_request_t* buffer)
 {
     for(int i = 0; i < MQTT_INCOMING_REQUEST_QUEUE_LENGTH; i++)
     {
@@ -79,7 +83,7 @@ void ZeroIncomingBufferBlock(mqtt_request_t *buffer)
 
 //Tries to get a ZERO'd buffer from the list, otherwise zero's out a free entry and returns it
 //Returns NULL when there are no free entries
-mqtt_outgoing_t *GetOutgoingBufferBlock()
+mqtt_outgoing_t* GetOutgoingBufferBlock()
 {
     int free_idx = -1;
     for(int i = 0; i < MQTT_OUTGOING_DATA_QUEUE_LENGTH; i++)
@@ -107,7 +111,7 @@ mqtt_outgoing_t *GetOutgoingBufferBlock()
 
 //Pushes responsibility of freeing buffer block to cleanup task or future caller (when no zero entries found)
 //Only use this when the caller is timepoor.
-void FreeOutgoingBufferBlock(mqtt_outgoing_t *buffer)
+void FreeOutgoingBufferBlock(mqtt_outgoing_t* buffer)
 {
     for(int i = 0; i < MQTT_OUTGOING_DATA_QUEUE_LENGTH; i++)
     {
@@ -121,7 +125,7 @@ void FreeOutgoingBufferBlock(mqtt_outgoing_t *buffer)
 
 //Zero's out the buffer and free's it
 //If time is of the essence you use FreeIncomingBufferBlock instead.
-void ZeroOutgoingBufferBlock(mqtt_outgoing_t *buffer)
+void ZeroOutgoingBufferBlock(mqtt_outgoing_t* buffer)
 {
     for(int i = 0; i < MQTT_OUTGOING_DATA_QUEUE_LENGTH; i++)
     {

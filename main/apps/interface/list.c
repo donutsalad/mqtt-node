@@ -15,8 +15,10 @@ static app_instance_t app_list[APP_LIST_MAXIMUM_CONCURRENT_INSTANCES];
 
 //TODO: Make this thread safe.
 //TOOD: Abstract creation process for a future sync-all-ID's to pick up orphaned app instances.
-static int Create_New_Instance(hash_t stem_hash, char* stem,  size_t stem_len, hash_t data_tag, char *data, size_t data_len)
-{
+static int Create_New_Instance(
+    hash_t stem_hash, char *stem,  size_t stem_len, 
+    hash_t data_tag, char *data, size_t data_len
+) {
     int fridx = -1;
     for(int i = 0; i < APP_LIST_MAXIMUM_CONCURRENT_INSTANCES; i++)
         if(app_list[i].app_interface == NULL) {
