@@ -7,3 +7,4 @@ html/includes
 hash/bin
 hash/obj
 hash/includes
+.vscode/*.code-workspace

@@ -37,7 +37,8 @@
 #define MQTT_EVENT_PCTASK_DONE  BIT2    //Finished initialising appstack
 #define MQTT_EVENT_TERMINATING  BIT3    //MQTT Services Shutdown in progress
 
-EventGroupHandle_t get_mqtt_event_group(void);
+EventGroupHandle_t  get_mqtt_event_group(void);
+hash_t              get_mqtt_client_id(void);
 
 int StartMQTTClient(
     void (*valid_connection)(void),

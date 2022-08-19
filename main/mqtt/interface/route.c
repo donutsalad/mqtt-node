@@ -21,6 +21,11 @@ typedef struct BUFFER_WRAPPER_OUGOING {
 //Depends on wether or not post-queue-recieve buffer usage is commonplace
 // - Deep copying would take up cycles saved by dequeuing a pointer and freeing the data later
 
+//NOTE: If the buffer and queue are combined; you would have to rewrite buffer/queue architecture;
+//      Currently the buffer for the data is requested seperately from queueing the data, hence, 
+//      local buffer allocation calls, and subsequent logic would need to be tasked to the queue handler.
+//      May not be worth the effort considering buffer requests are not always queued.
+
 _incoming_t _incoming_messages_buffer[MQTT_INCOMING_REQUEST_QUEUE_LENGTH];
 _outgoing_t _outgoing_messages_buffer[MQTT_OUTGOING_DATA_QUEUE_LENGTH];
 

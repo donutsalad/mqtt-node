@@ -1,4 +1,5 @@
 #include "mqttclient.h"
+#include "mqttinterface.h"
 
 #include <mqtt_client.h>
 
@@ -8,7 +9,10 @@
 static esp_mqtt_client_handle_t mqtt_client = NULL;
 static EventGroupHandle_t mqtt_event_group = NULL;
 
-EventGroupHandle_t get_mqtt_event_group(void) { return mqtt_event_group; }
+static hash_t mqtt_client_id = 0;
+
+EventGroupHandle_t  get_mqtt_event_group(void)  { return mqtt_event_group;  }
+hash_t              get_mqtt_client_id(void)    { return mqtt_client_id;    }
 
 static struct MQTT_Callbacks {
     void (*valid_connection)(void);
@@ -125,6 +129,9 @@ static void Post_Connection_Task(void *pvParameters)
     //TODO: After AppStack
     //Start downstream queue management tasks
     //Trigger app launch
+
+    StartMQTTInboxTask();
+    esp_mqtt_client_subscribe(mqtt_client, "system", 0);
 
     Print("MQTT Client", "Post Connection Task currently empty, but we've passed where successful execution would make it! Exiting.");
 
@@ -337,6 +344,64 @@ static void _mqtt_event_handler(
             
         //TODO: After AppStack
 		case MQTT_EVENT_DATA:
+            //Yes the ; is neccessary. See [https://stackoverflow.com/questions/92396/why-cant-variables-be-declared-in-a-switch-statement]
+            //C23 will forego the requirement of a null statement since it's implied here.
+            ;mqtt_request_t* buffer = GetIncomingBufferBlock();
+            if(buffer == NULL) {
+                Print("MQTT Event Handler", "No buffer blocks available to recieve incoming data! If this is reoccuring in your use case, please increase MQTT_INCOMING_REQUEST_QUEUE_LENGTH!");
+                break;
+            }
+
+            switch(ParseIncomingMQTTMessage(
+                buffer, event->msg_id, 
+                event->total_data_len, event->current_data_offset,
+                event->data, event->data_len, 
+                event->topic, event->topic_len
+            )) {
+                case MQTT_ENCODING_NOT_IMPLEMENTED:
+                    Print("MQTT Event Handler", "MQTT split message encoding not implemented yet! Sorry about that!");
+                    Print("MQTT Event Handler", "The following debug message will contain more information.");
+                    printf(
+                        "MQTT Event Handler DEBUG information:\nmsg_id: %d\ntotal_data_len: %d\ndata_len: %d\ntopic: %s\n", 
+                        event->msg_id, event->total_data_len, event->data_len, event->topic
+                    );
+                    FreeIncomingBufferBlock(buffer);
+                    break;
+
+                case MQTT_ENCODING_INVALID_LENGTH:
+                    Print("MQTT Event Handler", "Invalid length encountered while parsing incoming MQTT message!");
+                    FreeIncomingBufferBlock(buffer);
+                    break;
+
+                default:
+                    Print("MQTT Event Handler", "Unknown error occured while parsing incoming MQTT message. Ignoring.");
+                    FreeIncomingBufferBlock(buffer);
+                    break;
+
+                case MQTT_ENCODING_COMPLETE:
+                    switch(TryAddToInboxQueue(buffer))
+                    {
+                        case MQTT_INBOX_QUEUE_OKAY:
+                            break;
+
+                        case MQTT_INBOX_QUEUE_FULL:
+                            //TODO: Pass off to a task so we can free the mqtt client without loosing the message.
+                            Print("MQTT Event Handler", "Inbox queue is full! Message will be dropped for now, eventually a background task will wait for the queue to free!");
+                            FreeIncomingBufferBlock(buffer);
+                            break;
+
+                        case MQTT_INBOX_QUEUE_FAIL:
+                        default:
+                            Print("MQTT Event Handler", "Unknown error occured while trying to add incoming MQTT message to inbox queue. Ignoring.");
+                            FreeIncomingBufferBlock(buffer);
+                            break;
+                    }
+                    break;
+
+                case MQTT_ENCODING_HANDOFF:
+                    FreeIncomingBufferBlock(buffer);
+                    break;
+            }
 			break;
 
 		case MQTT_EVENT_BEFORE_CONNECT:

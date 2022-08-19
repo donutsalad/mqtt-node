@@ -1,5 +1,3 @@
-//App Type and Code Declaration Array
-
 #include "app.h"
 
 /*----------------------------------------------------------------------------
@@ -27,33 +25,18 @@
 //--------------------------------------
 //Hello World Interface Declarations
 //--------------------------------------
-
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-//App Code Forward Declarations
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-int             HelloWorld_Main(unsigned char *id, hash_t data_tag, char *data, size_t data_len);
-void            HelloWorld_Incoming(unsigned char id, char *stem,size_t stem_len, hash_t data_tag, char *data, size_t data_len);
-void            HelloWorld_Pause(unsigned char id);
-void            HelloWorld_Resume(unsigned char id);
-void            HelloWorld_Destroy(unsigned char id);
-void            HelloWorld_Cleanup();
-size_t          HelloWorld_ID_Scan(unsigned char *ids, size_t max_ids);
-app_status_t    HelloWorld_Status(unsigned char id);
-
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //Manifest Variables
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-extern const app_init_t      _App_Main_HelloWorld;
-extern const app_handle_t    _App_Handle_HelloWorld;
-extern const app_function_t  _App_Pause_HelloWorld;
-extern const app_function_t  _App_Resume_HelloWorld;
-extern const app_function_t  _App_Destroy_HelloWorld;
+const app_init_t      _App_Main_HelloWorld      = &HelloWorld_Main;
+const app_handle_t    _App_Handle_HelloWorld    = &HelloWorld_Incoming;
+const app_function_t  _App_Pause_HelloWorld     = &HelloWorld_Pause;
+const app_function_t  _App_Resume_HelloWorld    = &HelloWorld_Resume;
+const app_function_t  _App_Destroy_HelloWorld   = &HelloWorld_Destroy;
 
-extern void            (*const _Cleanup_HelloWorld)  (void);
-extern app_status_t    (*const _Status_HelloWorld)   (unsigned char id);
-extern size_t          (*const _IDScan_HelloWorld)   (unsigned char *ids, size_t max_ids);
+void            (*const _Cleanup_HelloWorld)  (void) = &HelloWorld_Cleanup;
+app_status_t    (*const _Status_HelloWorld)   (unsigned char id) = &HelloWorld_Status;
+size_t          (*const _IDScan_HelloWorld)   (unsigned char *ids, size_t max_ids) = &HelloWorld_ID_Scan;
 //--------------------------------------
-
 
 /*----------------------------------------------------------------------------
  * App Manifest
@@ -73,7 +56,23 @@ extern size_t          (*const _IDScan_HelloWorld)   (unsigned char *ids, size_t
  * .get_status          - Pointer to the app's status from id function.
  * .get_valid_ids       - Pointer to the app's full id scan function.
  *----------------------------------------------------------------------------*/
-extern const app_interface_t _App_Manifest[1];
+const app_interface_t _App_Manifest[1] = 
+{
+    {
+        .app_name   = "HelloWorld",
+        .app_name_h = PCHASH_HelloWorld,
+        .app_type   = APP_SINGLET,
+
+        .init           = _App_Main_HelloWorld,
+        .msg_handle     = _App_Handle_HelloWorld,
+        .pause          = _App_Pause_HelloWorld,
+        .resume         = _App_Resume_HelloWorld,
+        .destroy        = _App_Destroy_HelloWorld,
+        .cleanup        = _Cleanup_HelloWorld,
+        .get_status     = _Status_HelloWorld,
+        .get_valid_ids  = _IDScan_HelloWorld
+    }
+};
 /*----------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------
@@ -82,7 +81,18 @@ extern const app_interface_t _App_Manifest[1];
  * Attempts to find the app interface for a given hashed name,
  * if no matching manifests are found the returned pointer will be NULL.
  *----------------------------------------------------------------------------*/
-extern const app_interface_t* App_Interface_From_Name(hash_t name_h);
+const app_interface_t* App_Interface_From_Name(hash_t name_h)
+{
+    for(int i = 0; i < sizeof(_App_Manifest)/sizeof(app_interface_t); i++)
+    {
+        if(_App_Manifest[i].app_name_h == name_h)
+        {
+            return &_App_Manifest[i];
+        }
+    }
+
+    return NULL;
+}
 /*----------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------
@@ -101,5 +111,9 @@ extern const app_interface_t* App_Interface_From_Name(hash_t name_h);
  * unless you are sure that the app list is aware you're about to do so - or
  * is inactive/destroyed.
  *----------------------------------------------------------------------------*/
-extern void Cleanup_All_Apps();
+void Cleanup_All_Apps()
+{
+    for(int i = 0; i < sizeof(_App_Manifest)/sizeof(app_interface_t); i++)
+        _App_Manifest[i].cleanup();
+}
 /*----------------------------------------------------------------------------*/

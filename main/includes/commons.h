@@ -44,3 +44,4 @@ typedef unsigned int hash_t;
 
 hash_t djb_hash(const char* str);
 const char* djb_hash_toslash(const char* str, hash_t *hash);
+const char* djb_hash_tocolon(const char* str, hash_t *hash);

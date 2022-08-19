@@ -1,15 +1,7 @@
+#include "applist.h"
 #include "app_manifest.h"
 
 #include <string.h>
-
-#define MSG_DELIVERED           42
-#define LIST_RESUMED            3
-#define LIST_PAUSED             2
-#define LIST_DESTROYED          1
-#define LIST_INSTANTIATED       0
-#define LIST_BAD_APP_NAME       -1
-#define LIST_SINGLET_DUPLICANT  -2
-#define LIST_NO_SPACE           -255
 
 static app_instance_t app_list[APP_LIST_MAXIMUM_CONCURRENT_INSTANCES];
 
@@ -98,11 +90,15 @@ static int Resume_Instance(hash_t chash)
     return LIST_RESUMED;
 }
 
-static int Deliver_Message(hash_t chash, hash_t stem_hash, char* stem, size_t stem_len, hash_t data_tag, char *data, size_t data_len)
+int Deliver_Message(mqtt_request_t* request)
 {
-    app_instance_t* instance = GetAppInstance(chash);
+    app_instance_t* instance = GetAppInstance(request->path);
     if(instance == NULL) return LIST_BAD_APP_NAME;
     
-    _deliver_msg(instance, stem, stem_len, data_tag, data, data_len);
+    _deliver_msg(
+        instance,          request->stem, sizeof(request->stem), 
+        request->data_tag, request->data, sizeof(request->data)
+    );
+
     return MSG_DELIVERED;
 }
