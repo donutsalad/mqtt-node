@@ -9,8 +9,8 @@ The rewrite may be near identical on the first commit or completely different, s
  - [x] Boot and host a WLAN to prompt user for WiFi details
  - [x] Prompt user for MQTT details and boot mode
  - [x] Allow user to store default settings in NVS for handsoff-init
- - [ ] Establish custom desktop server connection and init presence
- - [ ] Establish a command interface with the desktop mqtt server
+ - [x] Establish custom desktop server connection and init presence
+ - [x] Establish a command interface with the desktop mqtt server
  - [ ] Pin exposure on a regularly polled basis
  - [ ] Basic use case tasks and commands
  - [ ] OnDemand and OnChange update modes
@@ -27,3 +27,6 @@ Below are a few caveats:
  - You will likely need to `sudo` to write into the ../main directory if you code in a dev container
  - The parser doesn't strip extended spaces, only tabs - thusly src must be tab indented
  - I haven't checked it on windows/macOS machines, but it should work since I used Path.Combine, YMMV
+
+## Hash Subproject
+I'll add the full information later! TL;DR same as above, but for precomputing hashes used in string switching and fast comparisons.
