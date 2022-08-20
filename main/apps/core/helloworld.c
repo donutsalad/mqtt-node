@@ -1,11 +1,11 @@
 #include "app_manifest.h"
 
-int HelloWorld_Main(unsigned char *id,hash_t data_tag, char *data,size_t data_len)
+int HelloWorld_Main(unsigned char *id, hash_t data_tag, char *data, size_t data_len)
 {
     return 0;
 }
 
-void HelloWorld_Incoming(unsigned char id, char *stem,size_t stem_len,hash_t data_tag, char *data,size_t data_len) 
+void HelloWorld_Incoming(unsigned char id, char *stem, size_t stem_len, hash_t data_tag, char *data, size_t data_len) 
 {
     Print("Hello World App", "Message recieved loud and clear!");
 }

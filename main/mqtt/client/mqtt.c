@@ -1,5 +1,6 @@
 #include "mqttclient.h"
 #include "mqttinterface.h"
+#include "applist.h"
 
 #include <mqtt_client.h>
 
@@ -131,7 +132,9 @@ static void Post_Connection_Task(void *pvParameters)
     //Trigger app launch
 
     StartMQTTInboxTask();
-    esp_mqtt_client_subscribe(mqtt_client, "system", 0);
+    esp_mqtt_client_subscribe(mqtt_client, "espeepee/#", 0);
+    Create_New_Instance(djb_hash("HelloWorld"), "HelloWorld", 11, 0, '\0', 1);
+    mqtt_client_id = djb_hash(mqtt_configuration.client_id);
 
     Print("MQTT Client", "Post Connection Task currently empty, but we've passed where successful execution would make it! Exiting.");
 

@@ -1,4 +1,5 @@
 #include "app.h"
+#include "app_manifest.h"
 
 /*----------------------------------------------------------------------------
  * App Declarations

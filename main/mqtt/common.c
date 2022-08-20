@@ -22,6 +22,18 @@ const char* djb_hash_toslash(const char *str, hash_t* hash)
     return str;
 }
 
+//Returns location of null char or slash, to a max length
+//*hash will be final value by return
+const char* djb_hash_toslash_len(const char *str, hash_t* hash, int length)
+{
+    *hash = 5381;
+    char *idx = str;
+    while(*idx != '\0' && *idx != '/' && idx < str + length)
+        *hash = 33 * (*hash) ^ (unsigned char) *idx++;
+    
+    return idx;
+}
+
 //Returns location of null char or colon
 //*hash will be final value by return
 const char* djb_hash_tocolon(const char *str, hash_t* hash)
@@ -31,4 +43,16 @@ const char* djb_hash_tocolon(const char *str, hash_t* hash)
         *hash = 33 * (*hash) ^ (unsigned char) *str++;
     
     return str;
+}
+
+//Returns location of null char or colon
+//*hash will be final value by return
+const char* djb_hash_tocolon_len(const char *str, hash_t* hash, int length)
+{
+    *hash = 5381;
+    char *idx = str;
+    while(*idx != '\0' && *idx != ':' && idx < str + length)
+        *hash = 33 * (*hash) ^ (unsigned char) *idx++;
+    
+    return idx;
 }

@@ -18,6 +18,9 @@ typedef void    (*app_function_t)   (unsigned char id);
 typedef unsigned char app_status_t;
 typedef unsigned char app_type_t;
 
+#ifndef APP_TYPES_H
+#define APP_TYPES_H
+
 typedef struct APP_Interface {
     app_init_t init;
     app_handle_t msg_handle;
@@ -71,3 +74,5 @@ static inline app_status_t _get_app_status(app_instance_t* app) {
 
     return app->app_interface->get_status(app->id);
 }
+
+#endif

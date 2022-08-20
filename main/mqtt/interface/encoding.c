@@ -44,8 +44,12 @@ int ParseIncomingMQTTMessage(
     //topic[topic_len - 1] = '\0';
     //Turns out we can't edit this!
 
-    char* idx = djb_hash_toslash(topic, &buffer->client_id);
-    if(*idx == '\0')
+    //Turns out that topic isn't null terminated either!
+    //Pointer location calculation used instead.
+
+    char* idx = djb_hash_toslash_len(topic, &buffer->client_id, topic_len);
+    //if(*idx == '\0')
+    if(idx++ == topic + topic_len)
     {
         //Let downstream code know there is no subroutes in the topic.
         buffer->route = buffer->path = MQTT_HASH_ROUTE_BASE;
@@ -55,8 +59,9 @@ int ParseIncomingMQTTMessage(
         goto DATA;
     }
 
-    idx = djb_hash_toslash(topic, &buffer->route);
-    if(*idx == '\0')
+    idx = djb_hash_toslash_len(idx, &buffer->route, topic_len - (idx - topic));
+    //if(*idx == '\0')
+    if(idx++ == topic + topic_len)
     {
         //Let downstream code know there is no path in the topic.
         buffer->path = MQTT_HASH_PATH_BASE;
@@ -66,8 +71,9 @@ int ParseIncomingMQTTMessage(
         goto DATA;
     }
 
-    idx = djb_hash_toslash(topic, &buffer->path);
-    if(*idx == '\0')
+    idx = djb_hash_toslash_len(idx, &buffer->path, topic_len - (idx - topic));
+    //if(*idx == '\0')
+    if(idx++ == topic + topic_len)
     {
         //Ensuring that the stem is clear.
         memset(buffer->stem, 0, sizeof(buffer->stem));
@@ -91,7 +97,7 @@ DATA:
     //All data messages, including typeless payloads, will delimit with x:y where x is type and y is data.
     //Typeless payloads simply start with : in the form :y.
     //If there is no data x is assumed to be the data, but a warning is printed and broadcasted.
-    idx = strchr(data, ':');
+    idx = memchr(data, ':', data_len);
     if(idx == NULL)
     {
         Print("MQTT Encoding", "No data delimiter found in message! Assuming data is the entire message.");
@@ -107,7 +113,7 @@ DATA:
     }
     else
     {
-        djb_hash_tocolon(data, &buffer->data_tag);
+        djb_hash_tocolon_len(data, &buffer->data_tag, data_len);
         strncpy(buffer->data, ++idx, sizeof(buffer->data)); //Ditto above.
     }
 

@@ -13,3 +13,7 @@
 #define LIST_NO_SPACE           -255
 
 int Deliver_Message(mqtt_request_t* request);
+int Create_New_Instance(
+    hash_t stem_hash, char *stem,  size_t stem_len, 
+    hash_t data_tag, char *data, size_t data_len
+);
