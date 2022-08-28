@@ -43,6 +43,7 @@
 #define BOOT_FLAG_VALIDATED     0x01
 #define BOOT_FLAG_FAILED        0x02
 #define BOOT_FLAG_BAD_AUTH      0x04
+#define BOOT_FLAG_BAD_MQTT      0x08
 
 #define BOOT_FLAGS_V_MASK       0b00000111
 
@@ -52,6 +53,8 @@
 #define BOOT_STATUS_CHANGED     3
 #define BOOT_STATUS_FAILED      4
 #define BOOT_STATUS_BAD_WIFI    5
+#define BOOT_STATUS_BAD_MQTT    6
+#define BOOT_STATUS_MQTT_CHANGE 7
 
 typedef struct WIFI_DETAILS_STRUCTURE {
     char ssid[WIFI_SSID_BUFFER_MAX];
@@ -85,6 +88,10 @@ inline int _boot_details_failed(restore_config_t *config) {
 
 inline int _boot_details_bad_auth(restore_config_t *config) {
     return (config->flags & BOOT_FLAG_BAD_AUTH);
+}
+
+inline int _boot_details_bad_mqtt(restore_config_t *config) {
+    return (config->flags & BOOT_FLAG_BAD_MQTT);
 }
 
 inline int boot_config_mode_from_string(char *str) {

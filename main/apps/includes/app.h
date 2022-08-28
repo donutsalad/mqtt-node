@@ -1,4 +1,5 @@
 #include "commons.h"
+#include "mqttinterface.h"
 
 #define APP_SINGLET     0
 #define APP_DUPLICABLE  1
@@ -12,7 +13,8 @@
 #define APP_STATUS_STOPPING     3
 
 typedef int     (*app_init_t)       (unsigned char* id, hash_t data_tag, char *data, size_t data_len);
-typedef void    (*app_handle_t)     (unsigned char id, char* stem, size_t stem_len, hash_t data_tag, char *data, size_t data_len);
+//typedef void    (*app_handle_t)     (unsigned char id, char* stem, size_t stem_len, hash_t data_tag, char *data, size_t data_len);
+typedef void    (*app_handle_t)     (unsigned char id, mqtt_request_t* buffer);
 typedef void    (*app_function_t)   (unsigned char id);
 
 typedef unsigned char app_status_t;
@@ -52,8 +54,8 @@ typedef struct APP_Instance {
 //Utility shorteners for instances where id is superfluous in context.
 
 //Deliver message to app instance
-static inline void _deliver_msg(app_instance_t* app, char* stem, size_t stem_len, hash_t data_tag, char *data, size_t data_len) {
-    app->app_interface->msg_handle(app->id, stem, stem_len, data_tag, data, data_len);
+static inline void _deliver_msg(app_instance_t* app, mqtt_request_t* buffer) {
+    app->app_interface->msg_handle(app->id, buffer);
 }
 //Pause app instance
 static inline void _pause_app(app_instance_t* app) {

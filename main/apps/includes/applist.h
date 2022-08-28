@@ -12,6 +12,7 @@
 #define LIST_SINGLET_DUPLICANT  -2
 #define LIST_NO_SPACE           -255
 
+void KillAllApps(void);
 int Deliver_Message(mqtt_request_t* request);
 int Create_New_Instance(
     hash_t stem_hash, char *stem,  size_t stem_len, 

@@ -6,6 +6,7 @@
 
 #include "wifistation.h"
 #include "datatypes.h"
+#include "restore.h"
 
 static esp_mqtt_client_handle_t mqtt_client = NULL;
 static EventGroupHandle_t mqtt_event_group = NULL;
@@ -60,19 +61,68 @@ static inline EventBits_t _blockfor_lostip(void) {
 static TaskHandle_t xInvalidationTask = NULL;
 static void Invalidation_Task(void *pvParameters)
 {
-    //TODO: After AppStack
-    //Check if the PCTASK_CALL flag is set
-        //If it has been set and the done flag is set, we need to terminate the entire stack.
-        //Otherwise block until it's done and do the same.
-    //Else
-        //Set the terminating flag
-        //Call cleanup ourselves
+/*--------------------------------------------------------------------
+ * This should be done by the MQTT Shutdown Call anyway!
+ *--------------------------------------------------------------------
+    EventBits_t event_group_details = xEventGroupGetBits(mqtt_event_group);
 
-    //Invalidate the stored details
-    //Call the callback routine
-    //Kill self
+    if(event_group_details & MQTT_EVENT_PCTASK_CALL)
+    {
+        Print("MQTT Invalidation", "MQTT Appstack Initialiser has been called!");
 
-    Print("MQTT Invalidation", "Invalidation request - currently not implemented. Exiting");
+        //Ensure that the co-routine is completed.
+        if(event_group_details & MQTT_EVENT_PCTASK_DONE) Print("MQTT Invalidation", "MQTT Appstack Initialiser Completed.");
+        else {
+            Print("MQTT Invalidation", "MQTT Appstack Initialiser not completed!");
+            xEventGroupWaitBits(
+                mqtt_event_group, 
+                MQTT_EVENT_PCTASK_DONE,
+                pdFALSE, pdFALSE,
+                portMAX_DELAY
+            );
+        }
+
+        //TODO: KILL ALL APPSTACK
+        Print("MQTT Invalidation", "Currently the downstream apptask killall is unimplemented, falling through function.");
+    }
+*/
+
+    Print("MQTT Invalidation", "Shutting down MQTT Services");
+    ShutdownMQTTServices();
+
+    if(using_restoration_data() == RESTORATION_USING)
+    {
+        Print("MQTT Invalidation", "Restoration is used; invalidating the stored mqtt details.");
+        switch(bad_mqtt_from_config())
+        {
+            case FLAGS_SET_UNCHANGED:
+                Print("MQTT Invalidation", "MQTT data already set as invalid, nothing's changed.");
+                break;
+
+            case FLAGS_SET_TWEAKED:
+                Print("MQTT Invalidation", "Restoration data already marked as invalid, only MQTT details invalid flag changed.");
+                break;
+
+            case FLAGS_SET_SINGLE:
+                Print("MQTT Invalidation", "Restoration data marked as invalid due to bad MQTT details.");
+                break;
+
+            case FLAGS_SET_UNHANDLED:
+                Print("MQTT Invalidation", "Warning: something went wrong whilst trying to invalidate config, likely this hasn't been recorded!");
+                break;
+        
+            default:
+                Print("MQTT Invalidation", "ERROR: Unhandled restoration return code! Unsure what this entails - success or otherwise. Please amend the src for any new return codes!");
+                break;
+        }
+    }
+
+    else Print("MQTT Invalidation", "Restoration isn't used in this context, killing self and returning.");
+        
+    Print("MQTT Invalidation", "Calling the unsuccessful callback.");
+    (*mqtt_callbacks.unsuccessful)();
+
+    Print("MQT Invalidation", "Exiting...");    
     xInvalidationTask = NULL;
     vTaskDelete(NULL);
 }
@@ -110,7 +160,8 @@ static void Post_Connection_Task(void *pvParameters)
 
     if(mqtt_event_group == NULL)
     {
-        Print("MQTT Client", "Event group not initialized! Aborting connected call and terminating client! Invalid state!!!");
+        Print("MQTT Client", "Event group not initialized! Aborting connected call, executing ungraceful shutdown callback, and terminating client! Invalid state!!!");
+        (*mqtt_callbacks.ungraceful_shutdown)();
         ShutdownMQTTServices();
         return;
     }
@@ -131,14 +182,23 @@ static void Post_Connection_Task(void *pvParameters)
     //Start downstream queue management tasks
     //Trigger app launch
 
+    //Subcribe to clientID/#
+    //Hash client_id
+
+    //START TEMPORARY
     StartMQTTInboxTask();
     esp_mqtt_client_subscribe(mqtt_client, "espeepee/#", 0);
     Create_New_Instance(djb_hash("HelloWorld"), "HelloWorld", 11, 0, '\0', 1);
     mqtt_client_id = djb_hash(mqtt_configuration.client_id);
+    //END TEMPORARY
 
-    Print("MQTT Client", "Post Connection Task currently empty, but we've passed where successful execution would make it! Exiting.");
-
+    Print("MQTT Client", "Finished post-connection routine, setting the PCTASK_DONE flag.");
     xEventGroupSetBits(mqtt_event_group, MQTT_EVENT_PCTASK_DONE);
+
+    Print("MQTT Client", "Calling the successful connection callback.");
+    (*mqtt_callbacks.valid_connection)();
+
+    Print("MQTT Client", "Stopping the post-connection task.");
     xPostConnectionTask = NULL;
     vTaskDelete(NULL);
     return;
@@ -151,7 +211,8 @@ static void ConnectionEstablished(void)
     EventBits_t event_group_details;
     if(mqtt_event_group == NULL)
     {
-        Print("MQTT Client", "Event group not initialized! Aborting connected call and terminating client! Invalid state!!!");
+        Print("MQTT Client", "Event group not initialized! Aborting connected call, executing ungraceful shutdown callback, and terminating client! Invalid state!!!");
+        (*mqtt_callbacks.ungraceful_shutdown)();
         ShutdownMQTTServices();
         return;
     }
@@ -196,7 +257,8 @@ static void ConnectionEstablished(void)
     if(resultant != pdPASS)
     {
         //TODO: Handle this a bit better.
-        Print("MQTT Client", "Post-connection task creation failed! Fatal error - shutting down MQTT services.");
+        Print("MQTT Client", "Post-connection task creation failed! Fatal error - executing ungraceful shutdown routine and shutting down MQTT services.");
+        (*mqtt_callbacks.ungraceful_shutdown)();
         ShutdownMQTTServices();
     }
 }
@@ -207,7 +269,8 @@ static void ConnectionLost(void)
 
     if(mqtt_event_group == NULL)
     {
-        Print("MQTT Client", "Event group not initialized! Aborting disconnected routine and terminating client! Invalid state!!!");
+        Print("MQTT Client", "Event group not initialized! Aborting disconnected routine, calling ungraceful shutdown callback, and terminating client! Invalid state!!!");
+        (*mqtt_callbacks.ungraceful_shutdown)();
         ShutdownMQTTServices();
         return;
     }
@@ -286,34 +349,29 @@ static void _mqtt_event_handler(
                             Print("MQTT Event Handler", "Connection refused because of a protocol error.");
                             Print("MQTT Event Handler", "Please check that the server you are trying to connect to is running mqtt!");
                         	InvalidateMQTTConfiguration();
-                            ShutdownMQTTServices();
                             break;
                             
                         case MQTT_CONNECTION_REFUSE_ID_REJECTED:
                             Print("MQTT Event Handler", "Connection refused on the basis of client ID - please ensure this ID is not blocklisted.");
                             InvalidateMQTTConfiguration();
-                            ShutdownMQTTServices();
                         	break;
                             
                         case MQTT_CONNECTION_REFUSE_SERVER_UNAVAILABLE:
                             Print("MQTT Event Handler", "Connection refused because the server is unavailable.");
                             Print("MQTT Event Handler", "Please check that the server you are trying to connect to is running mqtt!");
                             InvalidateMQTTConfiguration();
-                            ShutdownMQTTServices();
                         	break;
                             
                         case MQTT_CONNECTION_REFUSE_BAD_USERNAME:
                             Print("MQTT Event Handler", "Connection refused because of a bad username.");
                             Print("MQTT Event Handler", "MQTT-Node is not currently configured to support u/p connection option - feel free to extend yourself!");
                             InvalidateMQTTConfiguration();
-                            ShutdownMQTTServices();
                         	break;
                             
                         case MQTT_CONNECTION_REFUSE_NOT_AUTHORIZED:
                             Print("MQTT Event Handler", "Connection refused because of a bad password.");
                             Print("MQTT Event Handler", "MQTT-Node is not currently configured to support u/p connection option - feel free to extend yourself!");
                             InvalidateMQTTConfiguration();
-                            ShutdownMQTTServices();
                         	break;
                     }
                     break;
@@ -504,20 +562,22 @@ static void Termination_Handler(void *pvParameters)
     //TODO: After AppStack
     if(event_group_details & MQTT_EVENT_SERVICE_RDY)
     {
-        Print("MQTT Termination Handler", "MQTT Server connection established.");
         if(event_group_details & MQTT_EVENT_PCTASK_CALL)
         {
-            Print("MQTT Termination Handler", "MQTT Appstack Initialiser Called");
-            if(event_group_details & MQTT_EVENT_PCTASK_DONE)
-            {
-                Print("MQTT Termination Handler", "MQTT Appstack Initialiser Complete");
-                //Destroy downstream services.
+            //Ensure that the co-routine is completed.
+            Print("MQTT Termination Handler", "MQTT Server connection established.");
+            if(event_group_details & MQTT_EVENT_PCTASK_DONE) Print("MQTT Termination Handler", "MQTT Appstack Initialiser Complete");
+            else {
+                Print("MQTT Termination Handler", "MQTT Appstack Initialiser not completed! Blocking cleanup until system is steady.");
+                xEventGroupWaitBits(
+                    mqtt_event_group, 
+                    MQTT_EVENT_PCTASK_DONE,
+                    pdFALSE, pdFALSE,
+                    portMAX_DELAY
+                );
             }
-            else
-            {
-                Print("MQTT Termination Handler", "MQTT Appstack Initialiser not completed!");
-                //Check if the task exists - wait for it and then kill it gracefully.
-            }
+
+            KillAllApps();
         }
     }
 

@@ -418,17 +418,73 @@ static int _reject_auth_and_update_stored_restore_data(void) {
     return UPDATE_RESTORE_OK;
 }
 
+//If you call this function please ensure the NVS and local restore data are in sync.
+static int _reject_mqtt_and_update_stored_restore_data(void) {
+    Print("Config Restoration", "Bad MQTT Details co-routine entered.");
+
+    nvs_handle_t nvs;
+    switch(_transfer_local_restore_data_nvs_opener(&nvs))
+    {
+        case UPDATE_RESTORE_OK:
+            Print("Config Restoration", "NVS open successful, continuing...");
+            break;
+
+        case UPDATE_RESTORE_NVSERR:
+            Print("Config Restoration", "Unable to open NVS to reject mqtt from config! Aborting...");
+            return UPDATE_RESTORE_NVSERR;
+
+        case UPDATE_RESTORE_UNKNOWN:
+            Print("Config Restoration", "Unknown error occured while opening NVS to reject mqtt from config! Aborting...");
+            return UPDATE_RESTORE_UNKNOWN;
+
+        default:
+            Print("Config Restoration", "Unknown error occured from within the same file!!! Please check src and/or open a github issue!");
+            return UPDATE_RESTORE_UNKNOWN;
+    }
+
+    //Set both the failed flag and the bad mqtt flag - since it's implicit we failed if we have bad mqtt details.
+    local_restore_data.flags |= (BOOT_FLAG_FAILED | BOOT_FLAG_BAD_MQTT);
+    
+    switch(_transfer_local_restore_data_to_nvs(nvs))
+    {
+        case UPDATE_RESTORE_OK:
+            Print("Config Restoration", "Config updated successfully, closing NVS handle...");
+            break;
+
+        case UPDATE_RESTORE_NVSERR:
+            Print("Config Restoration", "Unable to save config to NVS! Aborting...");
+            nvs_close(nvs);
+            return UPDATE_RESTORE_NVSERR;
+
+        case UPDATE_RESTORE_UNKNOWN:
+            Print("Config Restoration", "Unknown error occured while saving config to NVS! Aborting...");
+            nvs_close(nvs);
+            return UPDATE_RESTORE_UNKNOWN;
+
+        default:
+            Print("Config Restoration", "Unknown error occured from within the same file!!! Please check src and/or open a github issue!");
+            nvs_close(nvs);
+            return UPDATE_RESTORE_UNKNOWN;
+    }
+
+    nvs_close(nvs);
+
+    return UPDATE_RESTORE_OK;
+}
+
 int get_boot_config_status(void)
 {
     if(_boot_details_validated(&local_restore_data))
     {
-        if(_boot_details_bad_auth(&local_restore_data))     return BOOT_STATUS_CHANGED;
-        else if(_boot_details_failed(&local_restore_data))  return BOOT_STATUS_FALIDATED;
-        else                                                return BOOT_STATUS_VALIDATED;
+        if(_boot_details_bad_auth(&local_restore_data))         return BOOT_STATUS_CHANGED;
+        else if(_boot_details_bad_mqtt(&local_restore_data))    return BOOT_STATUS_MQTT_CHANGE;
+        else if(_boot_details_failed(&local_restore_data))      return BOOT_STATUS_FALIDATED;
+        else                                                    return BOOT_STATUS_VALIDATED;
     }
-    else if(_boot_details_bad_auth(&local_restore_data))    return BOOT_STATUS_BAD_WIFI;
-    else if(_boot_details_failed(&local_restore_data))      return BOOT_STATUS_FAILED;
-    else                                                    return BOOT_STATUS_UNKNOWN;
+    else if(_boot_details_bad_mqtt(&local_restore_data))        return BOOT_STATUS_BAD_MQTT;
+    else if(_boot_details_bad_auth(&local_restore_data))        return BOOT_STATUS_BAD_WIFI;
+    else if(_boot_details_failed(&local_restore_data))          return BOOT_STATUS_FAILED;
+    else                                                        return BOOT_STATUS_UNKNOWN;
 }
 
 int attempt_restore(void)
@@ -477,9 +533,17 @@ int attempt_restore(void)
             Print("Config Restoration", "Configuration previously validated - but now WiFi auth has changed. Letting the caller know.");
             return ATTEMPT_RESTORE_NEW_WIFI;
 
+        case BOOT_STATUS_MQTT_CHANGE:
+            Print("Config Restoration", "Configuration previously validated - but now MQTT details are invalid. Letting the caller know.");
+            return ATTEMPT_RESTORE_NEW_MQTT;
+
         case BOOT_STATUS_BAD_WIFI:
-            Print("Config Restoration", "Configuration is invalid, WiFi details resulted in bad authentication attempt, Letting the caller know.");
+            Print("Config Restoration", "Configuration is invalid, WiFi details resulted in bad authentication attempt, letting the caller know.");
             return ATTEMPT_RESTORE_BAD_WIFI;
+
+        case BOOT_STATUS_BAD_MQTT:
+            Print("Config Restoration", "Configuration is invalid, MQTT details resulted in an unsucessful connection attempt, letting the caller know.");
+            return ATTEMPT_RESTORE_BAD_MQTT;
 
         case BOOT_STATUS_FAILED:
             Print("Config Restoration", "Configuration is yet to successfully work, could just be out of range - continuing for at least one retry.");
@@ -551,6 +615,13 @@ int validate_restore_data(void)
         case BOOT_STATUS_BAD_WIFI:
             Print("Config Restoration", "Configuration thought that WiFi details were bad...? Clearing the malasumptions and letting caller know things changed.");
             Print("Config Restoration", "If there are other bugs abound and you're reading this message - check any WiFi detail codes or mention this in the github issue.");
+            buffer = FLAGS_SET_TWEAKED;
+            break;
+
+        case BOOT_STATUS_MQTT_CHANGE:
+        case BOOT_STATUS_BAD_MQTT:
+            Print("Config Restoration", "Configuration thought that MQTT details were bad...? Clearing the malasumptions and letting caller know things changed.");
+            Print("Config Restoration", "If there are other bugs abound and you're reading this message - check any MQTT detail codes or mention this in the github issue.");
             buffer = FLAGS_SET_TWEAKED;
             break;
 
@@ -633,6 +704,11 @@ int failed_with_config(void)
             Print("Config Restoration", "Configuration has bad WiFi details, Failure is assumed.");
             return FLAGS_SET_UNCHANGED;
 
+        case BOOT_STATUS_BAD_MQTT:
+        case BOOT_STATUS_MQTT_CHANGE:
+            Print("Config Restoration", "Configuration has bad MQTT details, Failure is assumed.");
+            return FLAGS_SET_UNCHANGED;
+
         case BOOT_STATUS_UNKNOWN:
             Print("Config Restoration", "Configuration was fresh - setting faliure flag");
             buffer = FLAGS_SET_SINGLE;
@@ -710,10 +786,17 @@ int bad_auth_from_config(void)
             Print("Config Restoration", "Configuration has bad WiFi details already, letting caller know nothings changed.");
             return FLAGS_SET_UNCHANGED;
 
+        case BOOT_STATUS_BAD_MQTT:
+        case BOOT_STATUS_MQTT_CHANGE:
+            Print("Config Restoration", "Configuration has bad MQTT details already, only the bad auth flag will be changed.");
+            buffer = FLAGS_SET_SINGLE;
+            break;
+
         case BOOT_STATUS_FAILED:
         case BOOT_STATUS_FALIDATED:
             Print("Config Restoration", "Configuration is already set as failed, only the bad auth flag will be changed.");
-            return FLAGS_SET_SINGLE;
+            buffer = FLAGS_SET_SINGLE;
+            break;
 
         case BOOT_STATUS_UNKNOWN:
             Print("Config Restoration", "Configuration was fresh - setting both faliure and bad auth flags.");
@@ -746,6 +829,94 @@ int bad_auth_from_config(void)
 
         case ATTEMPT_RESTORE_UNKNOWN:
             Print("Config Restoration", "Unknown error whilst attempting to reject auth from config. Aborting...");
+            return ATTEMPT_RESTORE_UNKNOWN;
+
+        default:
+            Print("Config Restoration", "Unknown error from within the same src file!!! Please check src and/or open a github issue!");
+            return ATTEMPT_RESTORE_UNKNOWN;
+    }
+
+    return buffer;
+}
+
+int bad_mqtt_from_config(void)
+{
+    //Sync NVS
+    switch(_transfer_nvs_to_local_restore_data())
+    {
+        case ATTEMPT_RESTORE_OK:
+            Print("Config Restoration", "Config restored locally; continuing...");
+            break;
+
+        case ATTEMPT_RESTORE_NONE:
+            Print("Config Restoration", "No config to restore; aborting...");
+            return ATTEMPT_RESTORE_NONE;
+
+        case ATTEMPT_RESTORE_NVSERR:
+            Print("Config Restoration", "NVS error whilst doing local restore; aborting...");
+            return ATTEMPT_RESTORE_NVSERR;
+
+        case ATTEMPT_RESTORE_UNKNOWN:
+            Print("Config Restoration", "Unknown error whilst attempting local restore; aborting...");
+            return ATTEMPT_RESTORE_UNKNOWN;
+
+        default:
+            Print("Config Restoration", "Unknown error from within the same src file!!! Please check src and/or open a github issue!");
+            return ATTEMPT_RESTORE_UNKNOWN;
+    }
+
+    int buffer = -1;
+
+    //Figure out if we have to do something, debug log what case, store the result or return early.
+    switch(get_boot_config_status())
+    {
+        case BOOT_STATUS_BAD_MQTT:
+        case BOOT_STATUS_MQTT_CHANGE:
+            Print("Config Restoration", "Configuration has bad MQTT details already, letting caller know nothings changed.");
+            return FLAGS_SET_UNCHANGED;
+
+        case BOOT_STATUS_BAD_WIFI:
+        case BOOT_STATUS_CHANGED:
+            Print("Config Restoration", "Configuration has bad WiFi details, how could we be testing the MQTT details right now?");
+            return FLAGS_SET_UNHANDLED;
+
+        case BOOT_STATUS_FAILED:
+        case BOOT_STATUS_FALIDATED:
+            Print("Config Restoration", "Configuration is already set as failed, only the bad auth flag will be changed.");
+            buffer = FLAGS_SET_SINGLE;
+            break;
+
+        case BOOT_STATUS_UNKNOWN:
+            Print("Config Restoration", "Configuration was fresh - setting both faliure and bad auth flags.");
+            buffer = FLAGS_SET_TWEAKED;
+            break;
+
+        case BOOT_STATUS_VALIDATED:
+            Print("Config Restoration", "Configuration was validated! The details have likely changed - validation flag will remain and both failure and bad auth flags will be set.");
+            buffer = FLAGS_SET_TWEAKED;
+            break;
+
+        default: 
+            Print("Config Restoration", "Unknown current status... aborting in case we break something.");
+            return FLAGS_SET_UNHANDLED;
+    }
+    
+    switch(_reject_mqtt_and_update_stored_restore_data())
+    {
+        case ATTEMPT_RESTORE_OK:
+            Print("Config Restoration", "Config invalidated.");
+            break;
+
+        case ATTEMPT_RESTORE_NONE:
+            Print("Config Restoration", "No config to reject mqtt thereof?!?! Not sure how we got here, please check src and/or open a github issue...");
+            return ATTEMPT_RESTORE_NONE;
+
+        case ATTEMPT_RESTORE_NVSERR:
+            Print("Config Restoration", "NVS error whilst rejecting mqtt from config! Aborting...");
+            return ATTEMPT_RESTORE_NVSERR;
+
+        case ATTEMPT_RESTORE_UNKNOWN:
+            Print("Config Restoration", "Unknown error whilst attempting to reject mqtt from config. Aborting...");
             return ATTEMPT_RESTORE_UNKNOWN;
 
         default:

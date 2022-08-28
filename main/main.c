@@ -175,9 +175,72 @@ static int KillRepromptTask(void)
     return REPROMPT_STOP_SUCCESS;
 }
 
+static void MQTTSuccessfulCallback(void)
+{
+    //Validate and exit.
+
+    Print("MQTT Successful Callback", "Startup routine completed!");
+
+    if(using_restoration_data() == RESTORATION_USING)
+    {
+        Print("MQTT Successful Callback", "Restoration is used; validating stored configuration...");
+        switch(validate_restore_data())
+        {
+            case FLAGS_SET_UNCHANGED:
+                Print("MQTT Successful Callback", "Restoration data already validated! Ignoring...");
+                break;
+
+            case FLAGS_SET_SINGLE:
+            case FLAGS_SET_TWEAKED:
+                Print("MQTT Successful Callback", "Restoration data validated!");
+                break;
+            
+            case FLAGS_SET_UNHANDLED:
+                Print("MQTT Successful Callback", "Warning: Unable to set flags upon attempting restore data validation... If issue persists please check src or open an issue on github!");
+                break;
+        }
+    }
+
+    Print("MQTT Successful Callback", "Exiting callback, system tasks will self-manage from here-on out.");
+    return;
+}
+
+static void MQTTInvalidCallback(void)
+{
+    Print("MQTT Bad Config Handler", "Since the MQTT details were invalid, we're going to try to reprompt the user and try again.");
+    switch(LaunchRepromptTask())
+    {
+        case REPROMPT_TASK_CREATED:
+            Print("MQTT Bad Config Handler", "Reprompt task created successfully!");
+            break;
+
+        case REPROMPT_TASK_NOMEM:
+            Print("MQTT Bad Config Handler", "Reprompt task creation failed!");
+            Print("MQTT Bad Config Handler", "Could not allocate memory for reprompt task!");
+            break;
+
+        case REPROMPT_TASK_ERROR:
+        case REPROMPT_TASK_EXISTS:
+        default:
+            Print("MQTT Bad Config Handler", "Reprompt task creation failed!");
+            Print("MQTT Bad Config Handler", "Unhandled error occurred while creating reprompt task!");
+            break;
+    }
+}
+
+static void MQTTUngracefulShutdown(void)
+{
+    Print("MQTT Error Post-Mortem", "Ungraceful shutdown occured. Rebooting...");
+    esp_restart();
+}
+
 static void WiFiConnectedCallback(void)
 {
     Print("WiFi Connected Callback", "WiFi Connected Callback invoked.");
+
+/*----------------------------------------------------------------
+ * Config validation moved to post MQTT Validation
+ *----------------------------------------------------------------
     if(using_restoration_data() == RESTORATION_USING)
     {
         Print("WiFi Connected Callback", "Restoration is used; validating stored configuration...");
@@ -197,21 +260,49 @@ static void WiFiConnectedCallback(void)
                 break;
         }
     }
+*/
 
-    //Print("WiFi Connected Callback", "This is as far as the connection code can get us. Next up MQTT!!!");
+    Print("WiFi Connected Callback", "Launching MQTT Service!");
+    switch(StartMQTTClient(
+        &MQTTSuccessfulCallback, 
+        &MQTTInvalidCallback, 
+        &MQTTUngracefulShutdown
+    )) {
+        case MQTT_START_SUCCESS:
+            //Nothing to do but wait.
+            Print("WiFi Connected Callback", "MQTT Client Startup initiated.");
+            break;
 
-    Print("WiFi Connected Callback", "DEBUG: LAUNCHING CALLBACKLESS MQTT BOILERPLATE");
-    StartMQTTClient(NULL, NULL, NULL);
+        case MQTT_START_DUPLICATE:
+            //Already started -> send the resume signal.
+            Print("WiFi Connected Callback", "MQTT Client already started! Must be a reconnection, letting the client know to resume. UNIMPLEMENTED. FOR NOW IGNORING.");
+            break;
+
+        case MQTT_START_FAILURE:
+            //Handle failure and reboot.
+            Print("WiFi Connected Callback", "MQTT Client unable to be started! Rebooting...");
+            esp_restart();
+            //TODO: Handle the faliure better.
+            return;
+
+        default:
+            //Same as MQTT START FAILURE except log unknown return code.
+            Print("WiFi Connected Callback", "MQTT Client returned an unknown responce! Treating this as an error and rebooting, please check src for possible codes!");
+            esp_restart();
+            return;
+    }
 }
 
 static void WiFiDisconnectedHandler(void)
 {
     Print("WiFi Disconnected Handler", "WiFi Disconnected Handler starting...");
+    //TODO: Let the MQTT service know to wait up.
+    Print("WiFi Disconnected Handler", "Currently nothing to do, MQTT isn't paused yet. Ignoring...");
 }
 
 static void WiFiStopHandler(void)
 {
-    Print("WiFi Stop Handler", "WiFi Stop Handler starting...");
+    Print("WiFi Stop Handler", "WiFi Stopped, terminating MQTT services and aborting...");
     ShutdownMQTTServices();
 }
 
@@ -584,6 +675,16 @@ void app_main(void)
 
         case ATTEMPT_RESTORE_BAD_WIFI:
             Print("System", "The WiFi credentials are invalid.");
+            Print("System", "Treating as though no config was present.");
+            goto NO_CONFIG;
+
+        case ATTEMPT_RESTORE_NEW_MQTT:
+            Print("System", "Even though the configuration was validated in the past, the MQTT connection was since invalidated.");
+            Print("System", "Treating as though no config was present.");
+            goto NO_CONFIG;
+
+        case ATTEMPT_RESTORE_BAD_MQTT:
+            Print("System", "The MQTT credentials are invalid.");
             Print("System", "Treating as though no config was present.");
             goto NO_CONFIG;
 

@@ -5,9 +5,10 @@ int HelloWorld_Main(unsigned char *id, hash_t data_tag, char *data, size_t data_
     return 0;
 }
 
-void HelloWorld_Incoming(unsigned char id, char *stem, size_t stem_len, hash_t data_tag, char *data, size_t data_len) 
+void HelloWorld_Incoming(unsigned char id, mqtt_request_t* buffer)
 {
     Print("Hello World App", "Message recieved loud and clear!");
+    FreeIncomingBufferBlock(buffer);
 }
 
 void HelloWorld_Pause(unsigned char id)
@@ -32,6 +33,7 @@ void HelloWorld_Cleanup()
 
 size_t HelloWorld_ID_Scan(unsigned char *ids, size_t max_ids)
 {
+    //TODO: Make this a little more logical with return codes.
     if(max_ids > 1) return 0;
     ids[0] = 0;
     return 1;

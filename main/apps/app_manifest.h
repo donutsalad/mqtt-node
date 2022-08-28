@@ -32,7 +32,7 @@
 //App Code Forward Declarations
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 int             HelloWorld_Main(unsigned char *id, hash_t data_tag, char *data, size_t data_len);
-void            HelloWorld_Incoming(unsigned char id, char *stem,size_t stem_len, hash_t data_tag, char *data, size_t data_len);
+void            HelloWorld_Incoming(unsigned char id, mqtt_request_t* buffer);
 void            HelloWorld_Pause(unsigned char id);
 void            HelloWorld_Resume(unsigned char id);
 void            HelloWorld_Destroy(unsigned char id);

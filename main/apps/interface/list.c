@@ -95,12 +95,18 @@ int Deliver_Message(mqtt_request_t* request)
     app_instance_t* instance = GetAppInstance(request->path);
     if(instance == NULL) return LIST_BAD_APP_NAME;
     
-    _deliver_msg(
-        instance,          request->stem, sizeof(request->stem), 
-        request->data_tag, request->data, sizeof(request->data)
-    );
-
-    FreeIncomingBufferBlock(request); //Temporarily
+    _deliver_msg(instance, request);
 
     return MSG_DELIVERED;
+}
+
+void KillAllApps(void)
+{
+    for(int i = 0; i < APP_LIST_MAXIMUM_CONCURRENT_INSTANCES; i++)
+    {
+        _destroy_app(&app_list[i]);
+        app_list[i].app_interface = NULL;
+    }
+
+    Cleanup_All_Apps();
 }
