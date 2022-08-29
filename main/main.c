@@ -274,8 +274,9 @@ static void WiFiConnectedCallback(void)
             break;
 
         case MQTT_START_DUPLICATE:
-            //Already started -> send the resume signal.
-            Print("WiFi Connected Callback", "MQTT Client already started! Must be a reconnection, letting the client know to resume. UNIMPLEMENTED. FOR NOW IGNORING.");
+            //WRONG: Already started -> send the resume signal.
+            //We can block for hasIP inside the MQTT client.
+            Print("WiFi Connected Callback", "MQTT Client already started! Must be a reconnection, Ignoring...");
             break;
 
         case MQTT_START_FAILURE:
@@ -296,8 +297,9 @@ static void WiFiConnectedCallback(void)
 static void WiFiDisconnectedHandler(void)
 {
     Print("WiFi Disconnected Handler", "WiFi Disconnected Handler starting...");
-    //TODO: Let the MQTT service know to wait up.
-    Print("WiFi Disconnected Handler", "Currently nothing to do, MQTT isn't paused yet. Ignoring...");
+    //WRONG: Let the MQTT service know to wait up.
+    //MQTT Can handle the disconnection waiting for HAS_IP itself.
+    Print("WiFi Disconnected Handler", "Nothing to do, ignoring...");
 }
 
 static void WiFiStopHandler(void)

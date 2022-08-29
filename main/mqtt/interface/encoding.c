@@ -1,4 +1,5 @@
 #include "mqttinterface.h"
+#include "mqttclient.h"
 
 #include <string.h>
 
@@ -122,4 +123,81 @@ DATA:
     buffer->data[sizeof(buffer->data) - 1] = '\0';
     
     return MQTT_ENCODING_COMPLETE;
+}
+
+/*-----------------------------------------------------------------------------------------------
+ * Builds a topic string from an mqtt_outgoing_t app_tag and stem
+ * 
+ * Expected Formats:
+ * app_tag:     A pointer to the App Manifest human readable name.
+ * stem[16]:    Starting with \0 if no stem, else whatever subchannel you want it sent from.
+ * 
+ * topic:           A pointer to a buffer you want to fill.
+ * topic_maxlen:    The size of the buffer
+ * 
+ * NOTE: This function assumes stem[16] will have a max length of 15 and caps 16 with a nullterm
+ *       for added saftey.
+ *-----------------------------------------------------------------------------------------------*/
+int BuildTopicStringFromBuffer(mqtt_outgoing_t* buffer, char *topic, int topic_maxlen)
+{
+    char*   name    = get_mqtt_client_name();
+    size_t namelen  = strlen(name);
+    
+    //client_id/app/X <- +7 is at least ONE character incl. null term for an app path
+    if(topic_maxlen <= namelen + 7) return MQTT_ENCODING_BUFFER_TOOSHORT;
+
+    strncpy(topic, name, namelen);
+
+    //Starting from the nullterm, build up to the app name.
+    int idx = namelen;
+    topic[idx++] = '/';
+    topic[idx++] = 'a';
+    topic[idx++] = 'p';
+    topic[idx++] = 'p';
+    topic[idx++] = '/';
+    //Yeah it's kinda dumb but why not, short managable code and quick.
+
+    for(int i = 0;; i++)
+    {
+        if(idx >= topic_maxlen) goto TOOLONG;
+        if(buffer->app_tag[i] == '\0') break;
+        topic[idx++] = buffer->app_tag[i];
+    }
+    
+    topic[idx++] = '/';
+
+    for(int i = 0;; i++)
+    {
+        if(idx >= topic_maxlen) goto TOOLONG;
+        if(buffer->stem[i] == '\0') break;
+        topic[idx++] = buffer->stem[i];
+    }
+
+    //We're one character too short! Can't add the nullterm :(
+    if(idx == topic_maxlen - 1) goto TOOLONG;
+
+    topic[idx] = '\0';
+    return MQTT_ENCODING_COMPLETE;
+
+TOOLONG:
+    topic[topic_maxlen - 1] = '\0';
+    return MQTT_ENCODING_BUFFER_TRUNCATED;
+}
+/*-----------------------------------------------------------------------------------------------
+ * Builds a topic string from an mqtt_outgoing_t app_tag and stem
+ * 
+ * Expected Formats:
+ * data_tag:    A pointer to a string for the data tag, NULL if no type.
+ * data[256]:   Starting with \0 if no data, else nullterminated string.
+ * 
+ * data:        A pointer to the buffer you want to fill.
+ * data_maxlen: The size of the buffer
+ * data_len:    A pointer to the int you want to store the data strlen to.
+ * 
+ * NOTE: This function assumes stem[16] will have a max length of 15 and caps 16 with a nullterm
+ *       for added saftey.
+ *-----------------------------------------------------------------------------------------------*/
+int BuildDataStringFromBuffer(mqtt_outgoing_t* buffer, char *data, int buffer_maxlen, int* data_len)
+{
+    return -1;
 }

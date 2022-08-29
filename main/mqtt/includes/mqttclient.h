@@ -17,6 +17,7 @@
 #define MQTT_PC_TASK_STACK_SIZE 4096
 #define MQTT_INBOX_STACK_SIZE   4096
 #define MQTT_OUTBOX_STACK_SIZE  4096
+#define MQTT_RECON_STACK_SIZE   2048
 
 #define MQTT_START_SUCCESS      0
 #define MQTT_START_DUPLICATE    1
@@ -39,6 +40,7 @@
 
 EventGroupHandle_t  get_mqtt_event_group(void);
 hash_t              get_mqtt_client_id(void);
+char               *get_mqtt_client_name(void);
 
 int StartMQTTClient(
     void (*valid_connection)(void),

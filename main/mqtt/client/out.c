@@ -58,7 +58,7 @@ void MQTT_Outbox_Task(void *pvParameters)
 {
     for(;;)
     {
-        
+        //Try to dequeue, if we have internet; build topic & message and send, or block until we do.
     }
 }
 

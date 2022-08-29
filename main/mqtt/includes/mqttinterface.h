@@ -19,9 +19,15 @@
 #define MQTT_ENCODING_COMPLETE          0
 #define MQTT_ENCODING_INVALID_LENGTH    1
 #define MQTT_ENCODING_HANDOFF           2
+#define MQTT_ENCODING_BUFFER_TOOSHORT   3
+#define MQTT_ENCODING_BUFFER_TRUNCATED  4
 
 #define MQTT_ROUTE_CMD          PCHASH_cmd
 #define MQTT_ROUTE_APP          PCHASH_app
+
+#define MQTT_ROUTE_NAME_CMD     "cmd"
+#define MQTT_ROUTE_NAME_APP     "app"
+
 
 #ifndef MESSAGE_TYPES_H
 #define MESSAGE_TYPES_H

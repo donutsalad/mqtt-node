@@ -8,13 +8,12 @@
 #include "datatypes.h"
 #include "restore.h"
 
+static void InvalidateMQTTConfiguration(void);
+
 static esp_mqtt_client_handle_t mqtt_client = NULL;
 static EventGroupHandle_t mqtt_event_group = NULL;
 
 static hash_t mqtt_client_id = 0;
-
-EventGroupHandle_t  get_mqtt_event_group(void)  { return mqtt_event_group;  }
-hash_t              get_mqtt_client_id(void)    { return mqtt_client_id;    }
 
 static struct MQTT_Callbacks {
     void (*valid_connection)(void);
@@ -33,6 +32,10 @@ static esp_mqtt_client_config_t mqtt_configuration = {
     //Cap reconnection attempts, prevent reconnection during termination.
     .disable_auto_reconnect = MQTT_MANUAL_RECONNECT
 };
+
+EventGroupHandle_t  get_mqtt_event_group(void)  { return mqtt_event_group;              }
+hash_t              get_mqtt_client_id(void)    { return mqtt_client_id;                }
+char               *get_mqtt_client_name(void)  { return mqtt_configuration.client_id;  }
 
 static inline void _generate_mqtt_client_configuration(void) {
     //Need to refactor this - mqtt_config() backwards - a bit misnamed.
@@ -56,6 +59,99 @@ static inline EventBits_t _blockfor_lostip(void) {
         pdFALSE, pdTRUE,
         portMAX_DELAY
     );
+}
+
+static inline int _haslost_ip(void) {
+    return (xEventGroupGetBits(get_wifi_event_group()) && WIFI_STATION_LOST_IP) != 0;
+}
+
+static int _reconnection_attempts = 0;
+static inline void _Reconnection_Routine(void) 
+{
+    if(mqtt_event_group == NULL)
+    {
+        Print("MQTT Client", "Event group not initialized! Aborting disconnected routine, calling ungraceful shutdown callback, and terminating client! Invalid state!!!");
+        (*mqtt_callbacks.ungraceful_shutdown)();
+        ShutdownMQTTServices();
+        return;
+    }
+
+    EventBits_t event_group_details = xEventGroupClearBits(mqtt_event_group, MQTT_EVENT_SERVICE_RDY);
+
+    if(event_group_details & MQTT_EVENT_TERMINATING)
+    {
+        Print("MQTT Client", "MQTT Service is being terminated, ignoring connection loss.");
+        return;
+    }
+
+    if(_reconnection_attempts > MQTT_MAX_RECON_ATTEMPTS)
+    {
+        Print("MQTT Client", "Maximum reconnection attempts exceeded!");
+        Print("MQTT Client", "Terminating MQTT Service.");
+
+        InvalidateMQTTConfiguration();
+        return;
+    }
+
+    _reconnection_attempts++;
+    
+    switch(esp_mqtt_client_reconnect(mqtt_client))
+    {
+        case ESP_OK:
+            Print("MQTT Client", "Forced reconnection on client.");
+            return;
+
+        case ESP_ERR_INVALID_ARG:
+            Print("MQTT Client", "Bad mqtt_client handle! Ignoring for now but this could potentially be a source of bugs!");
+            break;
+
+        case ESP_FAIL:
+            Print("MQTT Client", "Client is in an invalid state! Ignoring for now but this could potentially be a source of bugs!");
+            break;
+        
+        default:
+            Print("MQTT Client", "Unhandled error! Please open a GitHub issue!");
+            break;
+    }
+}
+
+static TaskHandle_t xReconnectionTask = NULL;
+static void Reconnection_Task(void *pvParameters)
+{
+    Print("MQTT Reconnection Task", "Waiting until HAS_IP event is triggered by the WiFi class.");
+    _blockfor_hasip();
+
+    _Reconnection_Routine();
+
+    Print("MQTT Reconnection Task", "Exiting...");    
+    xReconnectionTask = NULL;
+    vTaskDelete(NULL);
+}
+
+static void ReconnectAfterIPObtained(void)
+{
+    if(xReconnectionTask != NULL)
+    {
+        Print("MQTT Client", "Reconnection co-routine already running! Ignoring extraneous reconnection request.");
+        return;
+    }
+
+    Print("MQTT Client", "MQTT Reconnection Requested.");
+
+    BaseType_t resultant = xTaskCreate(
+        Reconnection_Task,
+        "MQTT Reconnection Task",
+        MQTT_RECON_STACK_SIZE,
+        NULL,
+        MQTT_NODE_TASK_PRIORITY,
+        &xReconnectionTask
+    );
+
+    if(resultant != pdPASS)
+    {
+        Print("MQTT Client", "Failed to create reconnection task! If error persists, please open an issue on GitHub.");
+        return;
+    }
 }
 
 static TaskHandle_t xInvalidationTask = NULL;
@@ -122,7 +218,7 @@ static void Invalidation_Task(void *pvParameters)
     Print("MQTT Invalidation", "Calling the unsuccessful callback.");
     (*mqtt_callbacks.unsuccessful)();
 
-    Print("MQT Invalidation", "Exiting...");    
+    Print("MQTT Invalidation", "Exiting...");    
     xInvalidationTask = NULL;
     vTaskDelete(NULL);
 }
@@ -204,8 +300,6 @@ static void Post_Connection_Task(void *pvParameters)
     return;
 }
 
-static int _reconnection_attempts = 0;
-
 static void ConnectionEstablished(void)
 {
     EventBits_t event_group_details;
@@ -267,51 +361,14 @@ static void ConnectionLost(void)
 {
     Print("MQTT Client", "Connection lost!");
 
-    if(mqtt_event_group == NULL)
+    if(_haslost_ip())
     {
-        Print("MQTT Client", "Event group not initialized! Aborting disconnected routine, calling ungraceful shutdown callback, and terminating client! Invalid state!!!");
-        (*mqtt_callbacks.ungraceful_shutdown)();
-        ShutdownMQTTServices();
+        Print("MQTT Client", "We don't currently have an IP address! Triggering a background task to wait until we do.");
+        ReconnectAfterIPObtained();
         return;
     }
 
-    EventBits_t event_group_details = xEventGroupClearBits(mqtt_event_group, MQTT_EVENT_SERVICE_RDY);
-
-    if(event_group_details & MQTT_EVENT_TERMINATING)
-    {
-        Print("MQTT Client", "MQTT Service is being terminated, ignoring connection loss.");
-        return;
-    }
-
-    if(_reconnection_attempts > MQTT_MAX_RECON_ATTEMPTS)
-    {
-        Print("MQTT Client", "Maximum reconnection attempts exceeded!");
-        Print("MQTT Client", "Terminating MQTT Service.");
-
-        InvalidateMQTTConfiguration();
-        ShutdownMQTTServices();
-    }
-
-    _reconnection_attempts++;
-    
-    switch(esp_mqtt_client_reconnect(mqtt_client))
-    {
-        case ESP_OK:
-            Print("MQTT Client", "Forced reconnection on client.");
-            return;
-
-        case ESP_ERR_INVALID_ARG:
-            Print("MQTT Client", "Bad mqtt_client handle! Ignoring for now but this could potentially be a source of bugs!");
-            break;
-
-        case ESP_FAIL:
-            Print("MQTT Client", "Client is in an invalid state! Ignoring for now but this could potentially be a source of bugs!");
-            break;
-        
-        default:
-            Print("MQTT Client", "Unhandled error! Please open a GitHub issue!");
-            break;
-    }
+    _Reconnection_Routine();
 }
 
 static void _mqtt_event_handler(
@@ -349,30 +406,30 @@ static void _mqtt_event_handler(
                             Print("MQTT Event Handler", "Connection refused because of a protocol error.");
                             Print("MQTT Event Handler", "Please check that the server you are trying to connect to is running mqtt!");
                         	InvalidateMQTTConfiguration();
-                            break;
+                            return;
                             
                         case MQTT_CONNECTION_REFUSE_ID_REJECTED:
                             Print("MQTT Event Handler", "Connection refused on the basis of client ID - please ensure this ID is not blocklisted.");
                             InvalidateMQTTConfiguration();
-                        	break;
+                        	return;
                             
                         case MQTT_CONNECTION_REFUSE_SERVER_UNAVAILABLE:
                             Print("MQTT Event Handler", "Connection refused because the server is unavailable.");
                             Print("MQTT Event Handler", "Please check that the server you are trying to connect to is running mqtt!");
                             InvalidateMQTTConfiguration();
-                        	break;
+                        	return;
                             
                         case MQTT_CONNECTION_REFUSE_BAD_USERNAME:
                             Print("MQTT Event Handler", "Connection refused because of a bad username.");
                             Print("MQTT Event Handler", "MQTT-Node is not currently configured to support u/p connection option - feel free to extend yourself!");
                             InvalidateMQTTConfiguration();
-                        	break;
+                        	return;
                             
                         case MQTT_CONNECTION_REFUSE_NOT_AUTHORIZED:
                             Print("MQTT Event Handler", "Connection refused because of a bad password.");
                             Print("MQTT Event Handler", "MQTT-Node is not currently configured to support u/p connection option - feel free to extend yourself!");
                             InvalidateMQTTConfiguration();
-                        	break;
+                        	return;
                     }
                     break;
 
@@ -581,6 +638,13 @@ static void Termination_Handler(void *pvParameters)
         }
     }
 
+    if(xReconnectionTask != NULL)
+    {
+        Print("MQTT Termination Handler", "Reconnection task is running, terminating task.");
+        vTaskDelete(xReconnectionTask);
+        xReconnectionTask = NULL;
+    }
+
     CleanMQTTClient();
 
     Print("MQTT Termination Handler", "Cleanup complete! Killing self.");
@@ -738,4 +802,9 @@ int StartMQTTClient(
     );
 
     return MQTT_START_SUCCESS;
+}
+
+int SendMQTTMessage(char *topic, char *data, int data_len)
+{
+    return -1;
 }
